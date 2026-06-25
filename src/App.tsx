@@ -1,6 +1,5 @@
 import {
   ArrowRight,
-  BarChart3,
   CircleDollarSign,
   LayoutDashboard,
   Menu,
@@ -33,25 +32,30 @@ import {
   Routes,
 } from 'react-router-dom'
 import { LocalAssetReviewRepository } from './data/localAssetReviewRepository'
+import { LocalPortfolioReviewRepository } from './data/localPortfolioReviewRepository'
 import { LocalSpendingReviewRepository } from './data/localSpendingReviewRepository'
-import { OpenAiAssetAgent } from './data/openAiAssetAgent'
-import { OpenAiSpendingAgent } from './data/openAiSpendingAgent'
+import { HttpAssetAgent } from './data/httpAssetAgent'
+import { HttpPortfolioAgent } from './data/httpPortfolioAgent'
+import { HttpSpendingAgent } from './data/httpSpendingAgent'
 import { calculateAssetSummary, type AssetProposal } from './domain/assets'
 import {
   calculateExpenseTotal,
   type SpendingProposal,
 } from './domain/spending'
 import { AssetAgentWorkspace } from './features/assets/AssetAgentWorkspace'
+import { PortfolioAgentWorkspace } from './features/portfolio/PortfolioAgentWorkspace'
 import { SpendingAgentWorkspace } from './features/spending/SpendingAgentWorkspace'
 import './App.css'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
-const spendingAgent = new OpenAiSpendingAgent({
+const spendingAgent = new HttpSpendingAgent({
   baseUrl: apiBaseUrl,
 })
 const spendingReviewRepository = new LocalSpendingReviewRepository()
-const assetAgent = new OpenAiAssetAgent({ baseUrl: apiBaseUrl })
+const assetAgent = new HttpAssetAgent({ baseUrl: apiBaseUrl })
 const assetReviewRepository = new LocalAssetReviewRepository()
+const portfolioAgent = new HttpPortfolioAgent({ baseUrl: apiBaseUrl })
+const portfolioReviewRepository = new LocalPortfolioReviewRepository()
 
 const navigationItems = [
   { to: '/', label: '대시보드', icon: LayoutDashboard },
@@ -297,19 +301,33 @@ function AssetsPage() {
 }
 
 function PortfolioPage() {
+  const confirmedAssets = assetReviewRepository.loadLatest()
+  const assetSummary = confirmedAssets
+    ? calculateAssetSummary(confirmedAssets.proposals)
+    : null
+  const assetContext = assetSummary
+    ? [
+        `총자산 ${assetSummary.totalAsset}원`,
+        `총부채 ${assetSummary.totalDebt}원`,
+        `순자산 ${assetSummary.netWorth}원`,
+        `현금성 자산 ${assetSummary.liquidAsset}원`,
+        `투자 자산 ${assetSummary.investmentAsset}원`,
+        `누락 정보: ${confirmedAssets?.missingData.join(', ') || '없음'}`,
+      ].join('\n')
+    : '사용자가 확정한 자산 분석이 없습니다.'
+
   return (
     <PageContainer>
-      <PageHeader icon={<PieChart />} title="포트폴리오 추천" description="투자 성향과 기간, 현재 자산 상태를 바탕으로 자산 배분 방향을 제안해요." />
-      <InputCard title="투자 조건" description="추천이 아닌 참고용 자산 배분 분석입니다.">
-        <div className="form-grid">
-          <label>투자 성향<select defaultValue="neutral"><option value="stable">안정형</option><option value="neutral">중립형</option><option value="growth">공격형</option></select></label>
-          <label>투자 기간<select defaultValue="long"><option value="short">1년 미만</option><option value="medium">1~3년</option><option value="long">3년 이상</option></select></label>
-          <label>월 투자 가능 금액<input defaultValue="300,000원" /></label>
-          <label>관심 산업<input defaultValue="AI, 반도체, 전력 인프라" /></label>
-        </div>
-        <div className="button-row right"><button className="button primary" type="button"><Sparkles size={17} />포트폴리오 분석하기</button></div>
-      </InputCard>
-      <NoticeCard icon={<BarChart3 />} title="기본 중립형 배분" description="현금성 자산 20% · 광범위 ETF 40% · 성장 산업 후보 25% · 개별 종목 검토 10% · 대기자금 5%" />
+      <PageHeader
+        icon={<PieChart />}
+        title="포트폴리오 추천"
+        description="AI의 자산 배분 초안을 직접 수정하고 수락하거나 거절해 최종 방향을 결정해요."
+      />
+      <PortfolioAgentWorkspace
+        agent={portfolioAgent}
+        reviewRepository={portfolioReviewRepository}
+        assetContext={assetContext}
+      />
     </PageContainer>
   )
 }

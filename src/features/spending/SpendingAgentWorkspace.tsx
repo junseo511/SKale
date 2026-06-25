@@ -6,12 +6,14 @@ import {
   CircleAlert,
   LoaderCircle,
   MessageSquareText,
+  ImagePlus,
   Pencil,
   RotateCcw,
   ShieldCheck,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
 } from 'lucide-react'
 import {
   useEffect,
@@ -30,6 +32,7 @@ import {
   type SpendingAnalysis,
   type SpendingProposal,
   type SpendingReviewRepository,
+  type SpendingImageAttachment,
 } from '../../domain/spending'
 
 const EXAMPLE_INPUT =
@@ -48,6 +51,7 @@ export function SpendingAgentWorkspace({
 }: SpendingAgentWorkspaceProps): ReactNode {
   const [input, setInput] = useState(EXAMPLE_INPUT)
   const [feedback, setFeedback] = useState('')
+  const [images, setImages] = useState<SpendingImageAttachment[]>([])
   const [analysis, setAnalysis] = useState<SpendingAnalysis | null>(null)
   const [confirmedAnalysis, setConfirmedAnalysis] =
     useState<ConfirmedSpendingAnalysis | null>(() => reviewRepository.loadLatest())
@@ -77,8 +81,8 @@ export function SpendingAgentWorkspace({
   )
 
   async function requestAnalysis(userFeedback?: string): Promise<void> {
-    if (!input.trim()) {
-      setErrorMessage('분석할 소비 내역을 입력해 주세요.')
+    if (!input.trim() && images.length === 0) {
+      setErrorMessage('분석할 소비 내역을 입력하거나 이미지를 첨부해 주세요.')
       setStatus('error')
       return
     }
@@ -91,7 +95,7 @@ export function SpendingAgentWorkspace({
 
     try {
       const nextAnalysis = await agent.analyze(
-        { input, userFeedback },
+        { input, userFeedback, images },
         abortController.signal,
       )
       setAnalysis(nextAnalysis)
@@ -175,6 +179,25 @@ export function SpendingAgentWorkspace({
     void requestAnalysis(normalizedFeedback)
   }
 
+  async function addImages(files: FileList | null): Promise<void> {
+    if (!files) {
+      return
+    }
+
+    const remainingCount = Math.max(0, 4 - images.length)
+    const selectedFiles = [...files].slice(0, remainingCount)
+
+    try {
+      const attachments = await Promise.all(
+        selectedFiles.map((file) => readImage(file)),
+      )
+      setImages((current) => [...current, ...attachments])
+      setErrorMessage('')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '이미지를 읽지 못했습니다.')
+    }
+  }
+
   return (
     <div className="agent-workspace">
       <section className="agent-intro-card">
@@ -206,6 +229,41 @@ export function SpendingAgentWorkspace({
             value={input}
             onChange={(event) => setInput(event.target.value)}
           />
+          <div className="image-upload-area">
+            <label className="image-upload-button">
+              <ImagePlus size={17} />
+              영수증·결제내역 사진 첨부
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic"
+                multiple
+                onChange={(event) => {
+                  void addImages(event.target.files)
+                  event.target.value = ''
+                }}
+              />
+            </label>
+            <span>최대 4장 · 장당 4MB · 민감정보는 가려주세요.</span>
+          </div>
+          {images.length > 0 && (
+            <div className="image-preview-list" aria-label="첨부 이미지">
+              {images.map((image) => (
+                <div className="image-preview-item" key={`${image.name}-${image.data.length}`}>
+                  <img src={`data:${image.mimeType};base64,${image.data}`} alt={image.name} />
+                  <span>{image.name}</span>
+                  <button
+                    type="button"
+                    aria-label={`${image.name} 제거`}
+                    onClick={() =>
+                      setImages((current) => current.filter((item) => item !== image))
+                    }
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="button-row">
             <button
               className="button secondary"
@@ -297,6 +355,13 @@ export function SpendingAgentWorkspace({
             />
           </div>
 
+          {analysis.duplicateCount > 0 && (
+            <div className="duplicate-notice">
+              <CheckCheck size={17} />
+              텍스트와 이미지에서 겹친 거래 {analysis.duplicateCount}건을 자동으로 합쳤어요.
+            </div>
+          )}
+
           <div className="proposal-list">
             {analysis.proposals.map((proposal) => (
               <ProposalCard
@@ -357,6 +422,37 @@ export function SpendingAgentWorkspace({
       )}
     </div>
   )
+}
+
+function readImage(file: File): Promise<SpendingImageAttachment> {
+  const maximumBytes = 4 * 1024 * 1024
+  const supportedTypes: SpendingImageAttachment['mimeType'][] = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+  ]
+
+  if (!supportedTypes.includes(file.type as SpendingImageAttachment['mimeType'])) {
+    return Promise.reject(new Error(`${file.name}: 지원하지 않는 이미지 형식입니다.`))
+  }
+  if (file.size > maximumBytes) {
+    return Promise.reject(new Error(`${file.name}: 이미지가 4MB를 초과합니다.`))
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error(`${file.name}: 이미지를 읽지 못했습니다.`))
+    reader.onload = () => {
+      const result = String(reader.result)
+      resolve({
+        name: file.name,
+        mimeType: file.type as SpendingImageAttachment['mimeType'],
+        data: result.slice(result.indexOf(',') + 1),
+      })
+    }
+    reader.readAsDataURL(file)
+  })
 }
 
 interface ProposalCardProps {

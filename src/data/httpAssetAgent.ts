@@ -4,14 +4,14 @@ import type {
   AssetAnalysisRequest,
 } from '../domain/assets'
 
-interface OpenAiAssetAgentOptions {
+interface HttpAssetAgentOptions {
   baseUrl?: string
 }
 
-export class OpenAiAssetAgent implements AssetAgent {
+export class HttpAssetAgent implements AssetAgent {
   private readonly baseUrl: string
 
-  public constructor(options: OpenAiAssetAgentOptions = {}) {
+  public constructor(options: HttpAssetAgentOptions = {}) {
     this.baseUrl = options.baseUrl?.replace(/\/$/, '') ?? ''
   }
 

@@ -3,15 +3,16 @@ import type {
   SpendingAnalysis,
   SpendingAnalysisRequest,
 } from '../domain/spending'
+import { deduplicateSpendingProposals } from '../domain/spending'
 
-interface OpenAiSpendingAgentOptions {
+interface HttpSpendingAgentOptions {
   baseUrl?: string
 }
 
-export class OpenAiSpendingAgent implements SpendingAgent {
+export class HttpSpendingAgent implements SpendingAgent {
   private readonly baseUrl: string
 
-  public constructor(options: OpenAiSpendingAgentOptions = {}) {
+  public constructor(options: HttpSpendingAgentOptions = {}) {
     this.baseUrl = options.baseUrl?.replace(/\/$/, '') ?? ''
   }
 
@@ -35,6 +36,13 @@ export class OpenAiSpendingAgent implements SpendingAgent {
       )
     }
 
-    return (await response.json()) as SpendingAnalysis
+    const analysis = (await response.json()) as SpendingAnalysis
+    const deduplicated = deduplicateSpendingProposals(analysis.proposals)
+
+    return {
+      ...analysis,
+      proposals: deduplicated.proposals,
+      duplicateCount: analysis.duplicateCount + deduplicated.duplicateCount,
+    }
   }
 }
