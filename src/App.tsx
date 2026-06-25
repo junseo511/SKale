@@ -1,458 +1,610 @@
 import {
   ArrowRight,
-  CircleDollarSign,
-  LayoutDashboard,
-  Menu,
-  PieChart,
-  ReceiptText,
+  BadgeCheck,
+  Banknote,
+  Check,
+  ChevronRight,
+  CircleAlert,
+  Landmark,
+  LockKeyhole,
+  PiggyBank,
+  RotateCcw,
+  ShieldCheck,
   Sparkles,
-  TrendingUp,
+  Target,
   WalletCards,
-  X,
 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
+import { LocalPaydayPlanRepository } from './data/localPaydayPlanRepository'
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart as RechartsPieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
-import {
-  BrowserRouter,
-  NavLink,
-  Navigate,
-  Route,
-  Routes,
-} from 'react-router-dom'
-import { LocalAssetReviewRepository } from './data/localAssetReviewRepository'
-import { LocalPortfolioReviewRepository } from './data/localPortfolioReviewRepository'
-import { LocalSpendingReviewRepository } from './data/localSpendingReviewRepository'
-import { LocalStockReviewRepository } from './data/localStockReviewRepository'
-import { HttpAssetAgent } from './data/httpAssetAgent'
-import { HttpPortfolioAgent } from './data/httpPortfolioAgent'
-import { HttpSpendingAgent } from './data/httpSpendingAgent'
-import { HttpStockAgent } from './data/httpStockAgent'
-import { calculateAssetSummary, type AssetProposal } from './domain/assets'
-import {
-  calculateExpenseTotal,
-  type SpendingProposal,
-} from './domain/spending'
-import { AssetAgentWorkspace } from './features/assets/AssetAgentWorkspace'
-import { PortfolioAgentWorkspace } from './features/portfolio/PortfolioAgentWorkspace'
-import { SpendingAgentWorkspace } from './features/spending/SpendingAgentWorkspace'
-import { StockAgentWorkspace } from './features/stocks/StockAgentWorkspace'
+  createPaydayPlan,
+  isBalancedPlan,
+  replaceAllocationAmount,
+  type AllocationRole,
+  type InvestmentHorizon,
+  type PaydayInput,
+  type PaydayPlan,
+  type RiskProfile,
+} from './domain/paydayPlan'
 import './App.css'
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
-const spendingAgent = new HttpSpendingAgent({
-  baseUrl: apiBaseUrl,
-})
-const spendingReviewRepository = new LocalSpendingReviewRepository()
-const assetAgent = new HttpAssetAgent({ baseUrl: apiBaseUrl })
-const assetReviewRepository = new LocalAssetReviewRepository()
-const portfolioAgent = new HttpPortfolioAgent({ baseUrl: apiBaseUrl })
-const portfolioReviewRepository = new LocalPortfolioReviewRepository()
-const stockAgent = new HttpStockAgent({ baseUrl: apiBaseUrl })
-const stockReviewRepository = new LocalStockReviewRepository()
-
-const navigationItems = [
-  { to: '/', label: '대시보드', icon: LayoutDashboard },
-  { to: '/spending', label: '소비 분석', icon: ReceiptText },
-  { to: '/assets', label: '월급·자산', icon: WalletCards },
-  { to: '/portfolio', label: '포트폴리오', icon: PieChart },
-  { to: '/stocks', label: '종목 분석', icon: TrendingUp },
-]
-
-const chartColors = ['#6c5ce7', '#00a896', '#f4a261', '#e76f51', '#457b9d']
-
-function App() {
-  return (
-    <BrowserRouter>
-      <AppLayout>
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/spending" element={<SpendingPage />} />
-          <Route path="/assets" element={<AssetsPage />} />
-          <Route path="/portfolio" element={<PortfolioPage />} />
-          <Route path="/stocks" element={<StocksPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AppLayout>
-    </BrowserRouter>
-  )
+const EXAMPLE_INPUT: PaydayInput = {
+  monthlySalary: 3_200_000,
+  essentialExpense: 1_250_000,
+  debtPayment: 420_000,
+  currentEmergencyFund: 1_200_000,
+  targetEmergencyFund: 4_500_000,
+  goalName: '가을 여행',
+  goalMonthlyAmount: 300_000,
+  flexibleSpending: 450_000,
+  riskProfile: '균형형',
+  investmentHorizon: '3년 이상',
 }
 
-function AppLayout({ children }: { children: ReactNode }) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
+const repository = new LocalPaydayPlanRepository()
+
+function App(): ReactNode {
+  const savedPlan = useMemo(() => repository.load(), [])
+  const [input, setInput] = useState<PaydayInput>(
+    savedPlan?.input ?? EXAMPLE_INPUT,
+  )
+  const [plan, setPlan] = useState<PaydayPlan | null>(savedPlan)
+  const [isSaved, setIsSaved] = useState(Boolean(savedPlan))
+
+  function buildPlan(): void {
+    setPlan(createPaydayPlan(input))
+    setIsSaved(false)
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector('#plan-result')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
+  function updateAllocation(role: AllocationRole, amount: number): void {
+    setPlan((currentPlan) =>
+      currentPlan
+        ? replaceAllocationAmount(currentPlan, role, amount)
+        : currentPlan,
+    )
+    setIsSaved(false)
+  }
+
+  function savePlan(): void {
+    if (!plan || !isBalancedPlan(plan)) {
+      return
+    }
+    repository.save(plan)
+    setIsSaved(true)
+  }
 
   return (
     <div className="app-shell">
       <header className="site-header">
-        <div className="header-inner">
-          <NavLink className="brand" to="/" onClick={() => setIsMenuOpen(false)}>
-            <span className="brand-mark" aria-hidden="true">
-              S
-            </span>
-            <span>SKale</span>
-          </NavLink>
-
-          <nav className="desktop-navigation" aria-label="주요 메뉴">
-            {navigationItems.map((item) => (
-              <NavLink
-                key={item.to}
-                className={({ isActive }) => `navigation-link${isActive ? ' active' : ''}`}
-                to={item.to}
-                end={item.to === '/'}
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-
-          <button
-            className="menu-button"
-            type="button"
-            aria-label={isMenuOpen ? '메뉴 닫기' : '메뉴 열기'}
-            aria-expanded={isMenuOpen}
-            onClick={() => setIsMenuOpen((current) => !current)}
-          >
-            {isMenuOpen ? <X size={22} /> : <Menu size={22} />}
-          </button>
+        <a className="brand" href="#top" aria-label="SKale 처음으로">
+          <span className="brand-symbol">S</span>
+          <span>SKale</span>
+        </a>
+        <div className="header-status">
+          <span className="status-dot" />
+          Gemini 호출 꺼짐
         </div>
-
-        {isMenuOpen && (
-          <nav className="mobile-navigation" aria-label="모바일 주요 메뉴">
-            {navigationItems.map((item) => {
-              const Icon = item.icon
-              return (
-                <NavLink
-                  key={item.to}
-                  className={({ isActive }) => `mobile-navigation-link${isActive ? ' active' : ''}`}
-                  to={item.to}
-                  end={item.to === '/'}
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <Icon size={19} aria-hidden="true" />
-                  {item.label}
-                </NavLink>
-              )
-            })}
-          </nav>
-        )}
       </header>
 
-      <main>{children}</main>
+      <main id="top">
+        <section className="hero">
+          <div className="hero-copy">
+            <div className="eyebrow">
+              <Sparkles size={15} />
+              Payday decision agent
+            </div>
+            <h1>
+              월급을 받았다.
+              <br />
+              <em>이제 어떻게 하지?</em>
+            </h1>
+            <p>
+              먼저 지켜야 할 돈을 분리하고, 남은 돈만 투자하세요.
+              SKale이 월급 한 번의 결정을 끝까지 연결합니다.
+            </p>
+            <a className="hero-button" href="#planner">
+              이번 월급 배분하기
+              <ArrowRight size={18} />
+            </a>
+          </div>
 
-      <footer className="site-footer">
-        <p>SKale은 과제 시연용 AI Agent입니다.</p>
-        <p>분석 결과는 참고용이며 실제 투자 판단은 사용자의 책임입니다.</p>
+          <div className="hero-visual" aria-label="월급 배분 원칙">
+            <div className="salary-ticket">
+              <div>
+                <span>이번 달 월급</span>
+                <strong>{formatWon(input.monthlySalary)}</strong>
+              </div>
+              <Banknote size={30} />
+            </div>
+            <div className="priority-flow">
+              <FlowItem icon={<LockKeyhole />} label="생활" value="먼저" />
+              <ChevronRight size={18} />
+              <FlowItem icon={<ShieldCheck />} label="안전망" value="다음" />
+              <ChevronRight size={18} />
+              <FlowItem icon={<PiggyBank />} label="투자" value="마지막" />
+            </div>
+          </div>
+        </section>
+
+        <section className="principle-strip" aria-label="서비스 원칙">
+          <Principle number="01" title="쓸 돈" text="필수 생활비와 결제액" />
+          <Principle number="02" title="지킬 돈" text="비상금과 가까운 목표" />
+          <Principle number="03" title="키울 돈" text="남은 장기 투자금" />
+        </section>
+
+        <section className="planner-section" id="planner">
+          <div className="section-heading">
+            <div>
+              <span>STEP 1</span>
+              <h2>이번 월급의 조건을 알려주세요</h2>
+              <p>정확히 모르는 값은 현재 알고 있는 범위까지만 입력해도 괜찮아요.</p>
+            </div>
+            <button
+              className="text-button"
+              type="button"
+              onClick={() => {
+                setInput(EXAMPLE_INPUT)
+                setPlan(null)
+                setIsSaved(false)
+              }}
+            >
+              <RotateCcw size={15} />
+              예시로 초기화
+            </button>
+          </div>
+
+          <div className="planner-grid">
+            <section className="form-card">
+              <div className="form-group">
+                <FormTitle
+                  icon={<Banknote />}
+                  title="들어온 돈"
+                  description="통장에 실제 입금된 월급을 기준으로 해요."
+                />
+                <MoneyField
+                  label="월 실수령액"
+                  value={input.monthlySalary}
+                  onChange={(monthlySalary) =>
+                    setInput({ ...input, monthlySalary })
+                  }
+                />
+              </div>
+
+              <div className="form-group">
+                <FormTitle
+                  icon={<WalletCards />}
+                  title="이번 달 반드시 나갈 돈"
+                  description="생활과 신용을 지키는 돈부터 확보해요."
+                />
+                <div className="two-fields">
+                  <MoneyField
+                    label="필수 생활비"
+                    hint="월세·통신·보험·식비"
+                    value={input.essentialExpense}
+                    onChange={(essentialExpense) =>
+                      setInput({ ...input, essentialExpense })
+                    }
+                  />
+                  <MoneyField
+                    label="카드·부채 결제"
+                    hint="이번 달 실제 납부액"
+                    value={input.debtPayment}
+                    onChange={(debtPayment) =>
+                      setInput({ ...input, debtPayment })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <FormTitle
+                  icon={<ShieldCheck />}
+                  title="생활의 안전망"
+                  description="예상치 못한 달에도 투자를 깨지 않도록 준비해요."
+                />
+                <div className="two-fields">
+                  <MoneyField
+                    label="현재 비상금"
+                    value={input.currentEmergencyFund}
+                    onChange={(currentEmergencyFund) =>
+                      setInput({ ...input, currentEmergencyFund })
+                    }
+                  />
+                  <MoneyField
+                    label="비상금 목표"
+                    value={input.targetEmergencyFund}
+                    onChange={(targetEmergencyFund) =>
+                      setInput({ ...input, targetEmergencyFund })
+                    }
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="form-card">
+              <div className="form-group">
+                <FormTitle
+                  icon={<Target />}
+                  title="가까운 목표와 여유"
+                  description="곧 쓸 돈은 투자하지 않고 따로 모아요."
+                />
+                <label>
+                  목표 이름
+                  <input
+                    value={input.goalName}
+                    onChange={(event) =>
+                      setInput({ ...input, goalName: event.target.value })
+                    }
+                  />
+                </label>
+                <div className="two-fields">
+                  <MoneyField
+                    label="이번 달 목표 저축"
+                    value={input.goalMonthlyAmount}
+                    onChange={(goalMonthlyAmount) =>
+                      setInput({ ...input, goalMonthlyAmount })
+                    }
+                  />
+                  <MoneyField
+                    label="여유 생활비"
+                    value={input.flexibleSpending}
+                    onChange={(flexibleSpending) =>
+                      setInput({ ...input, flexibleSpending })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <FormTitle
+                  icon={<Landmark />}
+                  title="투자 조건"
+                  description="남는 투자금을 어떤 성격으로 나눌지 결정해요."
+                />
+                <div className="choice-group">
+                  <span>투자 성향</span>
+                  <div className="segmented-control">
+                    {(['안정형', '균형형', '성장형'] as RiskProfile[]).map(
+                      (profile) => (
+                        <button
+                          className={
+                            input.riskProfile === profile ? 'selected' : ''
+                          }
+                          type="button"
+                          key={profile}
+                          onClick={() =>
+                            setInput({ ...input, riskProfile: profile })
+                          }
+                        >
+                          {profile}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                </div>
+                <label>
+                  투자 기간
+                  <select
+                    value={input.investmentHorizon}
+                    onChange={(event) =>
+                      setInput({
+                        ...input,
+                        investmentHorizon: event.target
+                          .value as InvestmentHorizon,
+                      })
+                    }
+                  >
+                    <option>1년 미만</option>
+                    <option>1~3년</option>
+                    <option>3년 이상</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="privacy-note">
+                <LockKeyhole size={17} />
+                <div>
+                  <strong>계좌번호와 개인정보는 입력하지 마세요.</strong>
+                  <span>현재 계산은 브라우저 안에서만 수행되며 Gemini를 호출하지 않습니다.</span>
+                </div>
+              </div>
+
+              <button className="primary-button" type="button" onClick={buildPlan}>
+                내 월급에 역할 주기
+                <ArrowRight size={18} />
+              </button>
+            </section>
+          </div>
+        </section>
+
+        {plan && (
+          <section className="result-section" id="plan-result">
+            <div className="result-hero">
+              <div>
+                <span className="result-status">{plan.safetyStatus}</span>
+                <h2>{plan.headline}</h2>
+                <p>금액을 직접 바꾸면 남은 금액과 투자안도 즉시 다시 계산됩니다.</p>
+              </div>
+              <div className="investment-answer">
+                <span>이번 달 투자 가능 금액</span>
+                <strong>{formatWon(plan.availableInvestmentAmount)}</strong>
+              </div>
+            </div>
+
+            <div className="result-grid">
+              <section className="allocation-card">
+                <div className="card-heading">
+                  <div>
+                    <span>STEP 2</span>
+                    <h3>월급 사용처 확정하기</h3>
+                  </div>
+                  <strong
+                    className={
+                      plan.remainingAmount === 0
+                        ? 'balance valid'
+                        : 'balance invalid'
+                    }
+                  >
+                    {plan.remainingAmount === 0
+                      ? '딱 맞게 배분됨'
+                      : `${formatSignedWon(plan.remainingAmount)} 남음`}
+                  </strong>
+                </div>
+
+                <div className="allocation-list">
+                  {plan.allocations.map((allocation) => (
+                    <article
+                      className={`allocation-row ${allocation.role}`}
+                      key={allocation.role}
+                    >
+                      <span className="priority-number">
+                        {String(allocation.priority).padStart(2, '0')}
+                      </span>
+                      <div className="allocation-copy">
+                        <strong>{allocation.label}</strong>
+                        <p>{allocation.reason}</p>
+                      </div>
+                      <MoneyInput
+                        ariaLabel={`${allocation.label} 배분 금액`}
+                        value={allocation.amount}
+                        onChange={(amount) =>
+                          updateAllocation(allocation.role, amount)
+                        }
+                      />
+                    </article>
+                  ))}
+                </div>
+
+                {!isBalancedPlan(plan) && (
+                  <div className="balance-warning" role="alert">
+                    <CircleAlert size={17} />
+                    배분 합계가 월급과 같아야 저장할 수 있어요.
+                  </div>
+                )}
+              </section>
+
+              <aside className="guidance-card">
+                <div className="card-heading">
+                  <div>
+                    <span>AGENT NOTE</span>
+                    <h3>이번 월급의 우선순위</h3>
+                  </div>
+                </div>
+                <ol>
+                  {plan.guidance.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ol>
+                <div className="rule-box">
+                  <ShieldCheck size={19} />
+                  <p>
+                    투자금은 목표가 아닙니다. 생활비·결제·비상금을 지키고 난 뒤의
+                    결과예요.
+                  </p>
+                </div>
+              </aside>
+            </div>
+
+            <section className="portfolio-card">
+              <div className="card-heading">
+                <div>
+                  <span>STEP 3</span>
+                  <h3>남은 투자금 나누기</h3>
+                  <p>
+                    {input.riskProfile} · {input.investmentHorizon} 기준의 자산군
+                    배분 예시예요.
+                  </p>
+                </div>
+              </div>
+
+              {plan.portfolio.length > 0 ? (
+                <>
+                  <div className="portfolio-bar" aria-label="투자 자산 배분">
+                    {plan.portfolio.map((allocation, index) => (
+                      <span
+                        className={`portfolio-segment segment-${index + 1}`}
+                        style={{ width: `${allocation.percentage}%` }}
+                        key={allocation.label}
+                      />
+                    ))}
+                  </div>
+                  <div className="portfolio-grid">
+                    {plan.portfolio.map((allocation, index) => (
+                      <article key={allocation.label}>
+                        <i className={`legend-color segment-${index + 1}`} />
+                        <span>{allocation.label}</span>
+                        <strong>{allocation.percentage}%</strong>
+                        <b>{formatWon(allocation.amount)}</b>
+                        <p>{allocation.description}</p>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="portfolio-empty">
+                  <PiggyBank size={28} />
+                  <strong>이번 달 투자금은 0원이에요.</strong>
+                  <p>안전망을 먼저 채운 뒤 다음 월급에서 다시 계산해 보세요.</p>
+                </div>
+              )}
+
+              <div className="portfolio-footer">
+                <p>
+                  종목 매수 지시가 아닌 자산군 배분 예시입니다. 실제 상품 선택과
+                  투자 판단은 사용자가 결정해야 합니다.
+                </p>
+                <button
+                  className="save-button"
+                  type="button"
+                  disabled={!isBalancedPlan(plan)}
+                  onClick={savePlan}
+                >
+                  {isSaved ? <BadgeCheck size={18} /> : <Check size={18} />}
+                  {isSaved ? '이번 월급 계획 저장됨' : '이번 월급 계획 확정'}
+                </button>
+              </div>
+            </section>
+          </section>
+        )}
+      </main>
+
+      <footer>
+        <div className="brand footer-brand">
+          <span className="brand-symbol">S</span>
+          <span>SKale</span>
+        </div>
+        <p>월급의 모든 원화에 역할을 주는 의사결정 Agent</p>
+        <span>계산 결과는 참고용이며 금융 자문이 아닙니다.</span>
       </footer>
     </div>
   )
 }
 
-function DashboardPage() {
-  const confirmedSpending = spendingReviewRepository.loadLatest()
-  const confirmedAssets = assetReviewRepository.loadLatest()
-  const expenseTotal = confirmedSpending
-    ? calculateExpenseTotal(confirmedSpending.proposals)
-    : 0
-  const assetSummary = confirmedAssets
-    ? calculateAssetSummary(confirmedAssets.proposals)
-    : null
-  const monthlyInvestmentPlan =
-    confirmedAssets?.salaryAllocations?.find(
-      (allocation) => allocation.category === '투자',
-    )?.amount ?? 0
-  const spendingData = buildSpendingChartData(confirmedSpending?.proposals ?? [])
-  const assetData = buildAssetChartData(confirmedAssets?.proposals ?? [])
-
+function Principle({
+  number,
+  title,
+  text,
+}: {
+  number: string
+  title: string
+  text: string
+}): ReactNode {
   return (
-    <PageContainer>
-      <section className="hero-section">
-        <div>
-          <span className="eyebrow">
-            <Sparkles size={15} aria-hidden="true" />
-            Personal finance agent
-          </span>
-          <h1>AI로 소비를 읽고,<br />자산을 키우다.</h1>
-          <p>흩어진 돈의 흐름을 한눈에 이해하고 다음 행동까지 발견하세요.</p>
-        </div>
-        <div className="hero-orbit" aria-hidden="true">
-          <div className="orbit-core">
-            <TrendingUp size={36} />
-          </div>
-        </div>
-      </section>
+    <article>
+      <span>{number}</span>
+      <div>
+        <strong>{title}</strong>
+        <p>{text}</p>
+      </div>
+    </article>
+  )
+}
 
-      <section className="metric-grid" aria-label="자산 요약">
-        <MetricCard
-          icon={<ReceiptText />}
-          label="확정 소비"
-          value={confirmedSpending ? `${expenseTotal.toLocaleString()}원` : '분석 전'}
-          detail="사용자가 수락한 소비만 반영"
-          tone="coral"
+function FlowItem({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode
+  label: string
+  value: string
+}): ReactNode {
+  return (
+    <div className="flow-item">
+      {icon}
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function FormTitle({
+  icon,
+  title,
+  description,
+}: {
+  icon: ReactNode
+  title: string
+  description: string
+}): ReactNode {
+  return (
+    <div className="form-title">
+      <span>{icon}</span>
+      <div>
+        <strong>{title}</strong>
+        <p>{description}</p>
+      </div>
+    </div>
+  )
+}
+
+function MoneyField({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  value: number
+  onChange: (value: number) => void
+}): ReactNode {
+  return (
+    <label>
+      <span className="label-row">
+        {label}
+        {hint && <small>{hint}</small>}
+      </span>
+      <div className="money-field">
+        <input
+          inputMode="numeric"
+          value={value === 0 ? '' : value.toLocaleString()}
+          placeholder="0"
+          onChange={(event) => onChange(parseMoney(event.target.value))}
         />
-        <MetricCard
-          icon={<WalletCards />}
-          label="확정 순자산"
-          value={assetSummary ? `${assetSummary.netWorth.toLocaleString()}원` : '분석 전'}
-          detail="승인된 자산에서 부채를 차감"
-          tone="violet"
-        />
-        <MetricCard
-          icon={<CircleDollarSign />}
-          label="투자 여력"
-          value={
-            monthlyInvestmentPlan > 0
-              ? `${monthlyInvestmentPlan.toLocaleString()}원`
-              : '추가 정보 필요'
-          }
-          detail="확정한 월급 배분안의 투자 금액"
-          tone="teal"
-        />
-      </section>
-
-      <section className="dashboard-grid">
-        <ChartCard title="카테고리별 지출" description="일반 소비만 집계했어요.">
-          {spendingData.length > 0 ? <div className="chart-with-legend">
-            <div className="donut-chart">
-              <ResponsiveContainer width="100%" height="100%">
-                <RechartsPieChart>
-                  <Pie data={spendingData} dataKey="value" innerRadius={55} outerRadius={78} paddingAngle={3} stroke="none">
-                    {spendingData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
-                  </Pie>
-                  <Tooltip formatter={(value) => `${Number(value).toLocaleString()}원`} />
-                </RechartsPieChart>
-              </ResponsiveContainer>
-              <div className="donut-center"><strong>{formatCompactWon(expenseTotal)}</strong><span>확정 소비</span></div>
-            </div>
-            <ul className="chart-legend">
-              {spendingData.map((item) => (
-                <li key={item.name}>
-                  <span className="legend-label"><i style={{ background: item.color }} />{item.name}</span>
-                  <strong>{Math.round((item.value / expenseTotal) * 100)}%</strong>
-                </li>
-              ))}
-            </ul>
-          </div> : <DashboardEmptyState to="/spending" message="소비 내역을 AI와 검토하면 차트가 표시돼요." />}
-        </ChartCard>
-
-        <ChartCard title="자산 구성" description="부채를 제외한 총자산 기준이에요.">
-          {assetData.length > 0 ? <div className="bar-chart">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={assetData} margin={{ top: 18, right: 0, left: -20, bottom: 0 }}>
-                <CartesianGrid vertical={false} stroke="#eceaf3" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `${value / 1_000_000}M`} />
-                <Tooltip formatter={(value) => `${Number(value).toLocaleString()}원`} cursor={{ fill: '#f7f6fb' }} />
-                <Bar dataKey="value" fill="#6c5ce7" radius={[8, 8, 0, 0]} barSize={42} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div> : <DashboardEmptyState to="/assets" message="자산 현황을 AI와 검토하면 구성이 표시돼요." />}
-        </ChartCard>
-      </section>
-
-      <section className="insight-card">
-        <div className="insight-icon"><Sparkles size={22} /></div>
-        <div>
-          <span className="section-kicker">SKale AI 코멘트</span>
-          <h2>
-            {assetSummary
-              ? `월급 배분안과 순자산 ${assetSummary.netWorth.toLocaleString()}원을 확정했어요.`
-              : '확정된 월급·자산 계획이 아직 없어요.'}
-          </h2>
-          <p>
-            {confirmedAssets?.actionItems[0] ??
-              '월급과 자산 현황을 입력하고 AI 제안을 검토해 첫 재무 기준점을 만들어 보세요.'}
-          </p>
-        </div>
-      </section>
-
-      <section>
-        <SectionHeading title="지금 하면 좋은 일" description="현재 돈의 흐름을 바탕으로 우선순위를 정리했어요." />
-        <div className="action-grid">
-          <ActionCard number="01" title="미결제 금액 확인" description="카드 결제 예정 금액을 반영해 실제 가용 현금을 계산하세요." to="/assets" />
-          <ActionCard number="02" title="목적 자금 분리" description="여행 지출을 생활비와 분리하면 예산 흐름이 더 선명해져요." to="/spending" />
-          <ActionCard number="03" title="관심 종목 점검" description="현금흐름과 밸류에이션 데이터를 준비해 전략 적합도를 확인하세요." to="/stocks" />
-        </div>
-      </section>
-    </PageContainer>
+        <span>원</span>
+      </div>
+    </label>
   )
 }
 
-function SpendingPage() {
+function MoneyInput({
+  ariaLabel,
+  value,
+  onChange,
+}: {
+  ariaLabel: string
+  value: number
+  onChange: (value: number) => void
+}): ReactNode {
   return (
-    <PageContainer>
-      <PageHeader
-        icon={<ReceiptText />}
-        title="소비 분석"
-        description="AI가 먼저 제안하고, 사용자가 수정·수락·거절해 함께 소비 기록을 완성해요."
+    <div className="allocation-input">
+      <input
+        aria-label={ariaLabel}
+        inputMode="numeric"
+        value={value === 0 ? '' : value.toLocaleString()}
+        onChange={(event) => onChange(parseMoney(event.target.value))}
       />
-      <SpendingAgentWorkspace
-        agent={spendingAgent}
-        reviewRepository={spendingReviewRepository}
-      />
-    </PageContainer>
+      <span>원</span>
+    </div>
   )
 }
 
-function AssetsPage() {
-  return (
-    <PageContainer>
-      <PageHeader
-        icon={<WalletCards />}
-        title="월급·자산 관리"
-        description="월급과 현재 자산을 함께 입력하고, AI와 월급 배분안과 순자산을 확정해요."
-      />
-      <AssetAgentWorkspace
-        agent={assetAgent}
-        reviewRepository={assetReviewRepository}
-      />
-    </PageContainer>
-  )
+function parseMoney(value: string): number {
+  return Number(value.replaceAll(',', '').replace(/\D/g, '')) || 0
 }
 
-function PortfolioPage() {
-  const confirmedAssets = assetReviewRepository.loadLatest()
-  const assetSummary = confirmedAssets
-    ? calculateAssetSummary(confirmedAssets.proposals)
-    : null
-  const assetContext = assetSummary
-    ? [
-        `총자산 ${assetSummary.totalAsset}원`,
-        `총부채 ${assetSummary.totalDebt}원`,
-        `순자산 ${assetSummary.netWorth}원`,
-        `현금성 자산 ${assetSummary.liquidAsset}원`,
-        `투자 자산 ${assetSummary.investmentAsset}원`,
-        `월 실수령액 ${assetSummary.monthlyIncome}원`,
-        `필수 지출 ${assetSummary.essentialExpense}원`,
-        `누락 정보: ${confirmedAssets?.missingData.join(', ') || '없음'}`,
-      ].join('\n')
-    : '사용자가 확정한 자산 분석이 없습니다.'
-  const suggestedMonthlyInvestment =
-    confirmedAssets?.salaryAllocations?.find(
-      (allocation) => allocation.category === '투자',
-    )?.amount ?? 300_000
-
-  return (
-    <PageContainer>
-      <PageHeader
-        icon={<PieChart />}
-        title="포트폴리오 추천"
-        description="AI의 자산 배분 초안을 직접 수정하고 수락하거나 거절해 최종 방향을 결정해요."
-      />
-      <PortfolioAgentWorkspace
-        agent={portfolioAgent}
-        reviewRepository={portfolioReviewRepository}
-        assetContext={assetContext}
-        suggestedMonthlyAmount={suggestedMonthlyInvestment}
-      />
-    </PageContainer>
-  )
+function formatWon(value: number): string {
+  return `${Math.round(value).toLocaleString()}원`
 }
 
-function StocksPage() {
-  return (
-    <PageContainer>
-      <PageHeader
-        icon={<TrendingUp />}
-        title="종목 분석"
-        description="제공한 정보만으로 전략 적합도를 검토하고, 부족한 데이터는 숨기지 않고 요청해요."
-      />
-      <StockAgentWorkspace
-        agent={stockAgent}
-        reviewRepository={stockReviewRepository}
-      />
-    </PageContainer>
-  )
-}
-
-function PageContainer({ children }: { children: ReactNode }) {
-  return <div className="page-container">{children}</div>
-}
-
-function PageHeader({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
-  return <header className="page-header"><div className="page-icon">{icon}</div><div><h1>{title}</h1><p>{description}</p></div></header>
-}
-
-function SectionHeading({ title, description }: { title: string; description: string }) {
-  return <div className="section-heading"><div><h2>{title}</h2><p>{description}</p></div></div>
-}
-
-function MetricCard({ icon, label, value, detail, tone }: { icon: ReactNode; label: string; value: string; detail: string; tone: string }) {
-  return <article className="metric-card"><div className={`metric-icon ${tone}`}>{icon}</div><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>
-}
-
-function ChartCard({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <article className="chart-card"><SectionHeading title={title} description={description} />{children}</article>
-}
-
-function ActionCard({ number, title, description, to }: { number: string; title: string; description: string; to: string }) {
-  return <NavLink className="action-card" to={to}><span>{number}</span><h3>{title}</h3><p>{description}</p><ArrowRight size={19} aria-hidden="true" /></NavLink>
-}
-
-function DashboardEmptyState({ to, message }: { to: string; message: string }) {
-  return (
-    <NavLink className="dashboard-empty-state" to={to}>
-      <Sparkles size={22} />
-      <span>{message}</span>
-      <strong>분석 시작하기 <ArrowRight size={15} /></strong>
-    </NavLink>
-  )
-}
-
-function buildSpendingChartData(proposals: SpendingProposal[]) {
-  const totals = new Map<string, number>()
-
-  proposals
-    .filter(
-      (proposal) =>
-        proposal.decision === 'accepted' &&
-        (proposal.nature === 'expense' || proposal.nature === 'fixedExpense'),
-    )
-    .forEach((proposal) => {
-      const category = proposal.spendingCategory ?? '기타'
-      totals.set(category, (totals.get(category) ?? 0) + proposal.amount)
-    })
-
-  return [...totals.entries()].map(([name, value], index) => ({
-    name,
-    value,
-    color: chartColors[index % chartColors.length],
-  }))
-}
-
-function buildAssetChartData(proposals: AssetProposal[]) {
-  const totals = new Map<string, number>()
-
-  proposals
-    .filter(
-      (proposal) =>
-        proposal.decision === 'accepted' &&
-        proposal.category !== '부채/미결제' &&
-        proposal.category !== '반복 수입' &&
-        proposal.category !== '필수 지출',
-    )
-    .forEach((proposal) => {
-      const shortName = proposal.category.replace(' 자산', '')
-      totals.set(shortName, (totals.get(shortName) ?? 0) + proposal.amount)
-    })
-
-  return [...totals.entries()].map(([name, value]) => ({ name, value }))
-}
-
-function formatCompactWon(value: number): string {
-  if (value >= 10_000) {
-    return `${Math.round(value / 10_000).toLocaleString()}만`
-  }
-  return value.toLocaleString()
+function formatSignedWon(value: number): string {
+  return `${value > 0 ? '+' : ''}${Math.round(value).toLocaleString()}원`
 }
 
 export default App
