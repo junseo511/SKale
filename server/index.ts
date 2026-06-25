@@ -44,6 +44,18 @@ const portfolioAnalysisRequestSchema = z.object({
   userFeedback: z.string().trim().max(2_000).optional(),
 })
 
+const stockAnalysisRequestSchema = z.object({
+  companyName: z.string().trim().min(1).max(200),
+  ticker: z.string().trim().max(50).optional(),
+  industryDescription: z.string().trim().max(5_000),
+  businessDescription: z.string().trim().max(5_000),
+  financialData: z.string().trim().max(10_000),
+  valuationData: z.string().trim().max(5_000),
+  managementNotes: z.string().trim().max(5_000),
+  userConcern: z.string().trim().max(5_000),
+  userFeedback: z.string().trim().max(2_000).optional(),
+})
+
 const spendingAnalysisSchema = {
   type: 'object',
   additionalProperties: false,
@@ -137,6 +149,49 @@ const portfolioAnalysisSchema = {
     disclaimer: { type: 'string' },
   },
   required: ['allocations', 'strategyFit', 'priority', 'riskComment', 'actionItems', 'missingData', 'disclaimer'],
+} as const
+
+const nullableScore = (maximum: number) => ({
+  type: ['number', 'null'],
+  minimum: 0,
+  maximum,
+})
+
+const stockAnalysisSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    companyName: { type: 'string' },
+    ticker: { type: ['string', 'null'] },
+    verdict: {
+      type: 'string',
+      enum: ['핵심 검토 후보', '좋은 후보', '관찰 후보', '보류', '제외', '데이터 부족'],
+    },
+    scoreBreakdown: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        industryStructure: nullableScore(25),
+        competitiveAdvantage: nullableScore(20),
+        financialQuality: nullableScore(25),
+        valuation: nullableScore(15),
+        managementCapitalAllocation: nullableScore(10),
+        riskControl: nullableScore(5),
+      },
+      required: ['industryStructure', 'competitiveAdvantage', 'financialQuality', 'valuation', 'managementCapitalAllocation', 'riskControl'],
+    },
+    oneSentenceThesis: { type: 'string' },
+    strengths: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+    weaknesses: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+    fatalFlags: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+    missingData: { type: 'array', items: { type: 'string' }, maxItems: 10 },
+    assumptions: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+    questionsToCheck: { type: 'array', items: { type: 'string' }, maxItems: 8 },
+    monitoringMetrics: { type: 'array', items: { type: 'string' }, maxItems: 8 },
+    nextAction: { type: 'string' },
+    disclaimer: { type: 'string' },
+  },
+  required: ['companyName', 'ticker', 'verdict', 'scoreBreakdown', 'oneSentenceThesis', 'strengths', 'weaknesses', 'fatalFlags', 'missingData', 'assumptions', 'questionsToCheck', 'monitoringMetrics', 'nextAction', 'disclaimer'],
 } as const
 
 type SpendingOutput = {
@@ -332,6 +387,55 @@ app.post('/api/portfolio/analyze', async (request, response, next) => {
       ...analysis,
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
+      decision: 'pending',
+      appliedFeedback: parsedRequest.data.userFeedback || undefined,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/stocks/analyze', async (request, response, next) => {
+  try {
+    const parsedRequest = stockAnalysisRequestSchema.safeParse(request.body)
+    if (!parsedRequest.success) {
+      response.status(400).json({ message: '종목 분석 요청 형식이 올바르지 않습니다.' })
+      return
+    }
+
+    const { client, model } = createModelClient()
+    const modelResponse = await client.models.generateContent({
+      model,
+      contents: JSON.stringify(parsedRequest.data),
+      config: {
+        systemInstruction: [
+          '너는 개인 자산관리 Agent SKale의 종목 검토 역할이다.',
+          '오직 사용자가 제공한 정보만 사용하며 최신 실적, 주가, 밸류에이션을 검색하거나 추정하지 않는다.',
+          '평가 배점은 산업 구조 25, 경쟁우위 20, 재무제표 25, 밸류에이션 15, 경영진/자본배분 10, 리스크 관리 5이다.',
+          '평가할 근거가 부족한 영역은 점수를 null로 반환하고 verdict를 데이터 부족 또는 보류로 판단한다.',
+          '재무 데이터가 거의 없으면 전체 영역에 억지 점수를 주지 않는다.',
+          '영업현금흐름 지속 악화, 재고·매출채권 급증, 감당하기 어려운 부채, 반복 희석, 단순 하청, 과열 밸류에이션은 fatalFlags에 넣는다.',
+          '매수, 매도, 보유를 지시하지 않는다.',
+          '점수는 전략 적합도이며 사용자가 수락하거나 거절할 분석 초안이다.',
+          'disclaimer에는 제공 데이터 기반 참고용 분석이며 실제 투자 판단은 사용자 책임임을 명시한다.',
+        ].join('\n'),
+        responseMimeType: 'application/json',
+        responseJsonSchema: stockAnalysisSchema,
+        temperature: 0.1,
+        maxOutputTokens: 5_000,
+      },
+    })
+    const analysis = parseModelJson<{
+      ticker: string | null
+      [key: string]: unknown
+    }>(modelResponse.text)
+
+    response.json({
+      ...analysis,
+      ticker: analysis.ticker || undefined,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      totalScore: null,
       decision: 'pending',
       appliedFeedback: parsedRequest.data.userFeedback || undefined,
     })

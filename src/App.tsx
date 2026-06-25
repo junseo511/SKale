@@ -5,7 +5,6 @@ import {
   Menu,
   PieChart,
   ReceiptText,
-  ShieldCheck,
   Sparkles,
   TrendingUp,
   WalletCards,
@@ -34,9 +33,11 @@ import {
 import { LocalAssetReviewRepository } from './data/localAssetReviewRepository'
 import { LocalPortfolioReviewRepository } from './data/localPortfolioReviewRepository'
 import { LocalSpendingReviewRepository } from './data/localSpendingReviewRepository'
+import { LocalStockReviewRepository } from './data/localStockReviewRepository'
 import { HttpAssetAgent } from './data/httpAssetAgent'
 import { HttpPortfolioAgent } from './data/httpPortfolioAgent'
 import { HttpSpendingAgent } from './data/httpSpendingAgent'
+import { HttpStockAgent } from './data/httpStockAgent'
 import { calculateAssetSummary, type AssetProposal } from './domain/assets'
 import {
   calculateExpenseTotal,
@@ -45,6 +46,7 @@ import {
 import { AssetAgentWorkspace } from './features/assets/AssetAgentWorkspace'
 import { PortfolioAgentWorkspace } from './features/portfolio/PortfolioAgentWorkspace'
 import { SpendingAgentWorkspace } from './features/spending/SpendingAgentWorkspace'
+import { StockAgentWorkspace } from './features/stocks/StockAgentWorkspace'
 import './App.css'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
@@ -56,6 +58,8 @@ const assetAgent = new HttpAssetAgent({ baseUrl: apiBaseUrl })
 const assetReviewRepository = new LocalAssetReviewRepository()
 const portfolioAgent = new HttpPortfolioAgent({ baseUrl: apiBaseUrl })
 const portfolioReviewRepository = new LocalPortfolioReviewRepository()
+const stockAgent = new HttpStockAgent({ baseUrl: apiBaseUrl })
+const stockReviewRepository = new LocalStockReviewRepository()
 
 const navigationItems = [
   { to: '/', label: '대시보드', icon: LayoutDashboard },
@@ -335,20 +339,15 @@ function PortfolioPage() {
 function StocksPage() {
   return (
     <PageContainer>
-      <PageHeader icon={<TrendingUp />} title="종목 분석" description="내 투자 전략을 기준으로 관심 종목의 산업·경쟁우위·재무·가격을 점검해요." />
-      <InputCard title="종목 정보 입력" description="제공되지 않은 최신 재무정보는 추정하지 않아요.">
-        <div className="form-grid">
-          <label>종목명<input placeholder="예: 예시반도체장비" /></label>
-          <label>티커<input placeholder="예: 000000" /></label>
-        </div>
-        <label className="full-field">사업 및 산업 설명<textarea placeholder="기업이 어떤 산업에서 어떻게 돈을 버는지 입력하세요." /></label>
-        <label className="full-field">최근 재무 데이터<textarea placeholder="매출, 마진, 영업현금흐름, 부채, 밸류에이션 등을 입력하세요." /></label>
-        <div className="button-row">
-          <button className="button secondary" type="button">예시 불러오기</button>
-          <button className="button primary" type="button"><Sparkles size={17} />전략 기준으로 분석하기</button>
-        </div>
-      </InputCard>
-      <NoticeCard icon={<ShieldCheck />} title="데이터가 부족하면 분석을 보류합니다" description="SKale은 확인되지 않은 실적이나 가격을 만들어내지 않고, 추가로 필요한 데이터를 먼저 안내해요." />
+      <PageHeader
+        icon={<TrendingUp />}
+        title="종목 분석"
+        description="제공한 정보만으로 전략 적합도를 검토하고, 부족한 데이터는 숨기지 않고 요청해요."
+      />
+      <StockAgentWorkspace
+        agent={stockAgent}
+        reviewRepository={stockReviewRepository}
+      />
     </PageContainer>
   )
 }
@@ -375,14 +374,6 @@ function ChartCard({ title, description, children }: { title: string; descriptio
 
 function ActionCard({ number, title, description, to }: { number: string; title: string; description: string; to: string }) {
   return <NavLink className="action-card" to={to}><span>{number}</span><h3>{title}</h3><p>{description}</p><ArrowRight size={19} aria-hidden="true" /></NavLink>
-}
-
-function InputCard({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <section className="input-card"><SectionHeading title={title} description={description} />{children}</section>
-}
-
-function NoticeCard({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
-  return <aside className="notice-card"><div className="notice-icon">{icon}</div><div><h2>{title}</h2><p>{description}</p></div></aside>
 }
 
 function DashboardEmptyState({ to, message }: { to: string; message: string }) {

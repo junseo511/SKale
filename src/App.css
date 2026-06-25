@@ -231,6 +231,26 @@ label { color: #4c4757; font-size: 13px; font-weight: 650; }
 .portfolio-decision-row .proposal-action { border-right: 1px solid var(--color-border); }
 .compact-conversation { padding: 18px; }
 .compact-conversation textarea { min-height: 80px; }
+.stock-verdict-grid { display: grid; gap: 12px; grid-template-columns: repeat(3, 1fr); }
+.stock-summary-card { display: flex; min-width: 0; padding: 18px; border: 1px solid var(--color-border); border-radius: 13px; background: #faf9fc; flex-direction: column; gap: 7px; }
+.stock-summary-card span { color: var(--color-text-secondary); font-size: 11px; font-weight: 650; }
+.stock-summary-card strong { overflow: hidden; font-size: 19px; text-overflow: ellipsis; white-space: nowrap; }
+.stock-thesis { padding: 20px; border: 1px solid #ddd8fa; border-radius: 14px; background: #f8f6ff; }
+.stock-thesis h2 { margin: 7px 0 0; font-size: 20px; line-height: 1.45; }
+.stock-score-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr); }
+.stock-score-grid article { padding: 15px; border: 1px solid var(--color-border); border-radius: 12px; }
+.stock-score-grid article > div:first-child { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.stock-score-grid article span { color: var(--color-text-secondary); }
+.score-track { overflow: hidden; height: 6px; margin-top: 11px; border-radius: 999px; background: #ece9f2; }
+.score-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8172ef, #5c4bd5); }
+.stock-detail-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr); }
+.stock-list-panel { padding: 18px; border: 1px solid var(--color-border); border-radius: 13px; background: #fff; }
+.stock-list-panel h3 { margin: 0 0 10px; font-size: 14px; }
+.stock-list-panel ul { display: grid; margin: 0; padding-left: 18px; color: #625c6d; font-size: 12px; line-height: 1.55; gap: 6px; }
+.stock-list-panel p { margin: 0; color: var(--color-text-secondary); font-size: 12px; }
+.stock-list-panel.positive { border-color: #cce6df; background: #f6fcfa; }
+.stock-list-panel.negative { border-color: #efd5cf; background: #fffafa; }
+.stock-list-panel.warning { border-color: #ecd9b8; background: #fffaf0; }
 .dashboard-empty-state { display: flex; min-height: 245px; align-items: center; justify-content: center; padding: 30px; border: 1px dashed #d8d2e9; border-radius: 14px; color: var(--color-text-secondary); background: #faf9fc; text-align: center; flex-direction: column; gap: 10px; }
 .dashboard-empty-state svg { color: var(--color-primary); }
 .dashboard-empty-state span { max-width: 270px; font-size: 13px; line-height: 1.55; }
@@ -303,4 +323,5 @@ label { color: #4c4757; font-size: 13px; font-weight: 650; }
   .image-preview-list { grid-template-columns: 1fr; }
   .allocation-item { grid-template-columns: 1fr; }
   .allocation-item label { text-align: left; }
+  .stock-verdict-grid, .stock-score-grid, .stock-detail-grid { grid-template-columns: 1fr; }
 }
