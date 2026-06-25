@@ -25,6 +25,7 @@ import {
 import {
   assetCategories,
   calculateAssetSummary,
+  calculateSalaryAllocationTotal,
   isAssetReviewComplete,
   type AssetAgent,
   type AssetAnalysis,
@@ -34,7 +35,7 @@ import {
 } from '../../domain/assets'
 
 const EXAMPLE_INPUT =
-  '토스뱅크 1,200,000원\n카카오뱅크 800,000원\n적금 1,000,000원\n주식계좌 3,500,000원\n신용카드 미결제 420,000원'
+  '월 실수령액 3,200,000원\n월급일 매월 25일\n토스뱅크 1,200,000원\n주식계좌 3,500,000원\n신용카드 미결제 420,000원\n월세 500,000원\n통신비 70,000원\n다음 달 여행비 800,000원'
 
 interface AssetAgentWorkspaceProps {
   agent: AssetAgent
@@ -64,13 +65,10 @@ export function AssetAgentWorkspace({
     () => calculateAssetSummary(analysis?.proposals ?? []),
     [analysis],
   )
-  const acceptedCount =
-    analysis?.proposals.filter((proposal) => proposal.decision === 'accepted')
-      .length ?? 0
-  const rejectedCount =
-    analysis?.proposals.filter((proposal) => proposal.decision === 'rejected')
-      .length ?? 0
-
+  const salaryAllocationTotal = useMemo(
+    () => calculateSalaryAllocationTotal(analysis?.salaryAllocations ?? []),
+    [analysis],
+  )
   async function requestAnalysis(userFeedback?: string): Promise<void> {
     if (!input.trim()) {
       setErrorMessage('분석할 자산 현황을 입력해 주세요.')
@@ -129,6 +127,10 @@ export function AssetAgentWorkspace({
               ...proposal,
               decision: 'accepted',
             })),
+            allocationDecision:
+              currentAnalysis.salaryAllocations.length > 0
+                ? 'accepted'
+                : currentAnalysis.allocationDecision,
           }
         : currentAnalysis,
     )
@@ -137,6 +139,20 @@ export function AssetAgentWorkspace({
   function confirmReview(): void {
     if (!analysis || !isAssetReviewComplete(analysis.proposals)) {
       setErrorMessage('모든 자산 제안을 수락하거나 거절한 뒤 확정해 주세요.')
+      return
+    }
+    if (
+      analysis.salaryAllocations.length > 0 &&
+      analysis.allocationDecision !== 'accepted'
+    ) {
+      setErrorMessage('월급 배분안을 수락하거나 수정 후 수락해 주세요.')
+      return
+    }
+    if (
+      analysis.salaryAllocations.length > 0 &&
+      salaryAllocationTotal !== summary.monthlyIncome
+    ) {
+      setErrorMessage('월급 배분 합계가 월 실수령액과 같아야 합니다.')
       return
     }
 
@@ -169,11 +185,11 @@ export function AssetAgentWorkspace({
           <WalletCards size={24} />
         </div>
         <div>
-          <span>SKale 자산 코치</span>
-          <h2>자산과 부채를 구분하고, 숫자는 함께 확정해요.</h2>
+          <span>SKale 월급·자산 코치</span>
+          <h2>월급부터 자산과 부채까지 한 번에 정리해요.</h2>
           <p>
-            AI는 분류와 재무 건강 신호를 제안합니다. 총자산·부채·순자산은 사용자가
-            승인한 항목만으로 다시 계산합니다.
+            월급은 반복 수입으로, 통장 잔액은 자산으로 구분합니다. 승인된 정보로
+            순자산과 이번 달 월급 배분안을 함께 완성해요.
           </p>
         </div>
         <div className="agent-principle">
@@ -185,8 +201,8 @@ export function AssetAgentWorkspace({
       <div className="two-column-layout agent-input-layout">
         <section className="input-card">
           <SectionTitle
-            title="자산 현황 전달하기"
-            description="자산과 부채를 한 줄에 하나씩 입력하세요."
+            title="월급과 자산 전달하기"
+            description="월급, 월급일, 자산, 부채, 고정비, 목적 자금을 자유롭게 입력하세요."
           />
           <textarea
             aria-label="자산 현황"
@@ -222,14 +238,14 @@ export function AssetAgentWorkspace({
           <div className="conversation-heading">
             <MessageSquareText size={19} />
             <div>
-              <strong>자산의 목적을 AI에게 알려주세요</strong>
-              <span>단기 목적 자금이나 계좌 성격을 설명하면 분류가 정확해져요.</span>
+              <strong>월급 운용 목표를 AI에게 알려주세요</strong>
+              <span>비상금, 여행, 저축, 투자 우선순위를 설명하면 배분이 정확해져요.</span>
             </div>
           </div>
           <textarea
             aria-label="자산 AI 수정 요청"
             value={feedback}
-            placeholder="예: 카카오뱅크 80만원은 다음 달 여행비라 목적 자금으로 분류해줘."
+            placeholder="예: 비상금을 먼저 500만원까지 만들고 투자는 월급의 10%만 배분해줘."
             onChange={(event) => setFeedback(event.target.value)}
           />
           <button
@@ -263,8 +279,8 @@ export function AssetAgentWorkspace({
             <Sparkles size={21} />
           </div>
           <div>
-            <h2>자산의 성격과 재무 건강 신호를 살펴보고 있어요.</h2>
-            <p>제공한 항목만 사용해 자산·부채 분류와 확인 질문을 정리합니다.</p>
+            <h2>월급의 흐름과 현재 재무 상태를 함께 살펴보고 있어요.</h2>
+            <p>수입·필수 지출·자산·부채를 구분하고 월급 배분 초안을 만듭니다.</p>
           </div>
         </section>
       )}
@@ -274,7 +290,7 @@ export function AssetAgentWorkspace({
           <div className="review-heading">
             <div>
               <span className="section-kicker">AI ASSET PROPOSAL</span>
-              <h2>자산 분류 제안을 검토해 주세요</h2>
+              <h2>월급과 자산 분류를 검토해 주세요</h2>
               <p>{analysis.insight}</p>
             </div>
             <button className="button secondary compact" type="button" onClick={acceptAll}>
@@ -284,10 +300,10 @@ export function AssetAgentWorkspace({
           </div>
 
           <div className="review-summary asset-review-summary">
-            <SummaryItem label="총자산" value={`${summary.totalAsset.toLocaleString()}원`} />
-            <SummaryItem label="총부채" value={`${summary.totalDebt.toLocaleString()}원`} tone="rejected" />
+            <SummaryItem label="월 실수령액" value={`${summary.monthlyIncome.toLocaleString()}원`} tone="accepted" />
+            <SummaryItem label="필수 지출" value={`${summary.essentialExpense.toLocaleString()}원`} tone="rejected" />
             <SummaryItem label="순자산" value={`${summary.netWorth.toLocaleString()}원`} tone="primary" />
-            <SummaryItem label="검토" value={`${acceptedCount} 수락 · ${rejectedCount} 거절`} tone="accepted" />
+            <SummaryItem label="월급일" value={analysis.payday ?? '확인 필요'} />
           </div>
 
           <div className="asset-health-panel">
@@ -330,23 +346,121 @@ export function AssetAgentWorkspace({
             ))}
           </div>
 
+          {analysis.salaryAllocations.length > 0 && (
+            <section className="salary-allocation-section">
+              <div className="review-heading">
+                <div>
+                  <span className="section-kicker">SALARY ALLOCATION</span>
+                  <h2>이번 월급 배분안을 조정해 보세요</h2>
+                  <p>{analysis.allocationInsight}</p>
+                </div>
+                <strong
+                  className={`allocation-total ${
+                    salaryAllocationTotal === summary.monthlyIncome ? 'valid' : ''
+                  }`}
+                >
+                  {salaryAllocationTotal.toLocaleString()}원
+                </strong>
+              </div>
+
+              <div className="allocation-list">
+                {analysis.salaryAllocations.map((allocation) => (
+                  <article className="allocation-item" key={allocation.id}>
+                    <div>
+                      <strong>{allocation.category}</strong>
+                      <p>{allocation.reason}</p>
+                    </div>
+                    <label>
+                      배분 금액
+                      <input
+                        inputMode="numeric"
+                        value={allocation.amount}
+                        onChange={(event) =>
+                          setAnalysis((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  allocationDecision: 'pending',
+                                  salaryAllocations:
+                                    current.salaryAllocations.map((item) =>
+                                      item.id === allocation.id
+                                        ? {
+                                            ...item,
+                                            amount:
+                                              Number(
+                                                event.target.value.replaceAll(
+                                                  ',',
+                                                  '',
+                                                ),
+                                              ) || 0,
+                                          }
+                                        : item,
+                                    ),
+                                }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                  </article>
+                ))}
+              </div>
+
+              <div className="portfolio-decision-row">
+                <button
+                  className={`proposal-action accept${
+                    analysis.allocationDecision === 'accepted'
+                      ? ' selected'
+                      : ''
+                  }`}
+                  type="button"
+                  onClick={() =>
+                    setAnalysis({ ...analysis, allocationDecision: 'accepted' })
+                  }
+                >
+                  <ThumbsUp size={15} />
+                  배분안 수락
+                </button>
+                <button
+                  className={`proposal-action reject${
+                    analysis.allocationDecision === 'rejected'
+                      ? ' selected'
+                      : ''
+                  }`}
+                  type="button"
+                  onClick={() =>
+                    setAnalysis({ ...analysis, allocationDecision: 'rejected' })
+                  }
+                >
+                  <ThumbsDown size={15} />
+                  배분안 거절
+                </button>
+              </div>
+            </section>
+          )}
+
           <div className="review-footer">
             <div>
               <strong>
                 {isAssetReviewComplete(analysis.proposals)
-                  ? '모든 자산 항목을 검토했어요.'
-                  : '아직 판단하지 않은 자산 항목이 있어요.'}
+                  ? '월급과 자산 항목을 모두 검토했어요.'
+                  : '아직 판단하지 않은 항목이 있어요.'}
               </strong>
-              <span>확정된 항목만 대시보드의 순자산에 반영됩니다.</span>
+              <span>수입은 배분에, 자산과 부채는 순자산 계산에 각각 반영됩니다.</span>
             </div>
             <button
               className="button primary"
               type="button"
-              disabled={!isAssetReviewComplete(analysis.proposals)}
+              disabled={
+                !isAssetReviewComplete(analysis.proposals) ||
+                (analysis.salaryAllocations.length > 0 &&
+                  (analysis.allocationDecision !== 'accepted' ||
+                    salaryAllocationTotal !== summary.monthlyIncome))
+              }
               onClick={confirmReview}
             >
               <CheckCheck size={17} />
-              자산 현황 확정
+              월급·자산 계획 확정
             </button>
           </div>
         </section>
@@ -358,9 +472,12 @@ export function AssetAgentWorkspace({
             <CircleDollarSign size={22} />
           </div>
           <div>
-            <span>최근 확정 자산</span>
-            <h2>순자산 {confirmedSummary.netWorth.toLocaleString()}원을 저장했어요.</h2>
-            <p>대시보드에는 AI가 아닌 사용자가 최종 승인한 숫자만 표시됩니다.</p>
+            <span>최근 확정 월급·자산 계획</span>
+            <h2>
+              월급 {confirmedSummary.monthlyIncome.toLocaleString()}원과 순자산{' '}
+              {confirmedSummary.netWorth.toLocaleString()}원을 저장했어요.
+            </h2>
+            <p>확정된 월급 배분안은 다음 포트폴리오 분석의 투자 가능 금액으로 연결할 수 있어요.</p>
           </div>
         </section>
       )}

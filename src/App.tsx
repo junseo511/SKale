@@ -64,7 +64,7 @@ const stockReviewRepository = new LocalStockReviewRepository()
 const navigationItems = [
   { to: '/', label: '대시보드', icon: LayoutDashboard },
   { to: '/spending', label: '소비 분석', icon: ReceiptText },
-  { to: '/assets', label: '자산 분석', icon: WalletCards },
+  { to: '/assets', label: '월급·자산', icon: WalletCards },
   { to: '/portfolio', label: '포트폴리오', icon: PieChart },
   { to: '/stocks', label: '종목 분석', icon: TrendingUp },
 ]
@@ -166,6 +166,10 @@ function DashboardPage() {
   const assetSummary = confirmedAssets
     ? calculateAssetSummary(confirmedAssets.proposals)
     : null
+  const monthlyInvestmentPlan =
+    confirmedAssets?.salaryAllocations?.find(
+      (allocation) => allocation.category === '투자',
+    )?.amount ?? 0
   const spendingData = buildSpendingChartData(confirmedSpending?.proposals ?? [])
   const assetData = buildAssetChartData(confirmedAssets?.proposals ?? [])
 
@@ -205,8 +209,12 @@ function DashboardPage() {
         <MetricCard
           icon={<CircleDollarSign />}
           label="투자 여력"
-          value="추가 정보 필요"
-          detail="소득·생활비·목적 자금 확인 후 산정"
+          value={
+            monthlyInvestmentPlan > 0
+              ? `${monthlyInvestmentPlan.toLocaleString()}원`
+              : '추가 정보 필요'
+          }
+          detail="확정한 월급 배분안의 투자 금액"
           tone="teal"
         />
       </section>
@@ -255,8 +263,15 @@ function DashboardPage() {
         <div className="insight-icon"><Sparkles size={22} /></div>
         <div>
           <span className="section-kicker">SKale AI 코멘트</span>
-          <h2>{confirmedAssets?.insight ?? '확정된 자산 분석이 아직 없어요.'}</h2>
-          <p>{confirmedAssets?.actionItems[0] ?? '자산 현황을 입력하고 AI 제안을 검토해 첫 재무 기준점을 만들어 보세요.'}</p>
+          <h2>
+            {assetSummary
+              ? `월급 배분안과 순자산 ${assetSummary.netWorth.toLocaleString()}원을 확정했어요.`
+              : '확정된 월급·자산 계획이 아직 없어요.'}
+          </h2>
+          <p>
+            {confirmedAssets?.actionItems[0] ??
+              '월급과 자산 현황을 입력하고 AI 제안을 검토해 첫 재무 기준점을 만들어 보세요.'}
+          </p>
         </div>
       </section>
 
@@ -293,8 +308,8 @@ function AssetsPage() {
     <PageContainer>
       <PageHeader
         icon={<WalletCards />}
-        title="자산 분석"
-        description="AI가 자산과 부채를 제안하고, 사용자가 승인한 숫자로 순자산을 함께 확정해요."
+        title="월급·자산 관리"
+        description="월급과 현재 자산을 함께 입력하고, AI와 월급 배분안과 순자산을 확정해요."
       />
       <AssetAgentWorkspace
         agent={assetAgent}
@@ -316,9 +331,15 @@ function PortfolioPage() {
         `순자산 ${assetSummary.netWorth}원`,
         `현금성 자산 ${assetSummary.liquidAsset}원`,
         `투자 자산 ${assetSummary.investmentAsset}원`,
+        `월 실수령액 ${assetSummary.monthlyIncome}원`,
+        `필수 지출 ${assetSummary.essentialExpense}원`,
         `누락 정보: ${confirmedAssets?.missingData.join(', ') || '없음'}`,
       ].join('\n')
     : '사용자가 확정한 자산 분석이 없습니다.'
+  const suggestedMonthlyInvestment =
+    confirmedAssets?.salaryAllocations?.find(
+      (allocation) => allocation.category === '투자',
+    )?.amount ?? 300_000
 
   return (
     <PageContainer>
@@ -331,6 +352,7 @@ function PortfolioPage() {
         agent={portfolioAgent}
         reviewRepository={portfolioReviewRepository}
         assetContext={assetContext}
+        suggestedMonthlyAmount={suggestedMonthlyInvestment}
       />
     </PageContainer>
   )
@@ -414,7 +436,9 @@ function buildAssetChartData(proposals: AssetProposal[]) {
     .filter(
       (proposal) =>
         proposal.decision === 'accepted' &&
-        proposal.category !== '부채/미결제',
+        proposal.category !== '부채/미결제' &&
+        proposal.category !== '반복 수입' &&
+        proposal.category !== '필수 지출',
     )
     .forEach((proposal) => {
       const shortName = proposal.category.replace(' 자산', '')

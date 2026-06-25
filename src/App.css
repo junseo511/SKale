@@ -200,6 +200,7 @@ label { color: #4c4757; font-size: 13px; font-weight: 650; }
 .confirmed-card h2 { margin: 5px 0 6px; font-size: 18px; }
 .confirmed-card p { margin: 0; color: #55716b; font-size: 12px; line-height: 1.55; }
 .asset-health-panel { display: grid; align-items: start; gap: 20px; padding: 18px 20px; border: 1px solid #ddd8fa; border-radius: 14px; background: #f8f6ff; grid-template-columns: 130px 1fr; }
+.salary-allocation-section { display: flex; flex-direction: column; gap: 15px; padding: 22px; border: 1px solid #d8d2f7; border-radius: 17px; background: linear-gradient(135deg, #f8f6ff, #fff); }
 .asset-health-panel > div { display: flex; flex-direction: column; gap: 5px; }
 .asset-health-panel span { color: var(--color-text-secondary); font-size: 11px; font-weight: 650; }
 .asset-health-panel strong { color: var(--color-primary); font-size: 20px; }

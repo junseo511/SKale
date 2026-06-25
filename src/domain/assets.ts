@@ -1,4 +1,6 @@
 export const assetCategories = [
+  '반복 수입',
+  '필수 지출',
   '현금성 자산',
   '저축성 자산',
   '투자 자산',
@@ -9,6 +11,26 @@ export const assetCategories = [
 
 export type AssetCategory = (typeof assetCategories)[number]
 export type AssetReviewDecision = 'pending' | 'accepted' | 'rejected'
+
+export const salaryAllocationCategories = [
+  '필수 생활비',
+  '부채/카드 결제',
+  '비상금',
+  '목적 자금',
+  '저축',
+  '투자',
+  '여유 자금',
+] as const
+
+export type SalaryAllocationCategory =
+  (typeof salaryAllocationCategories)[number]
+
+export interface SalaryAllocationProposal {
+  id: string
+  category: SalaryAllocationCategory
+  amount: number
+  reason: string
+}
 
 export interface AssetAnalysisRequest {
   input: string
@@ -36,6 +58,10 @@ export interface AssetAnalysis {
   insight: string
   actionItems: string[]
   missingData: string[]
+  payday?: string
+  salaryAllocations: SalaryAllocationProposal[]
+  allocationInsight: string
+  allocationDecision: AssetReviewDecision
   appliedFeedback?: string
 }
 
@@ -61,6 +87,8 @@ export interface AssetSummary {
   netWorth: number
   liquidAsset: number
   investmentAsset: number
+  monthlyIncome: number
+  essentialExpense: number
 }
 
 export function calculateAssetSummary(
@@ -70,7 +98,11 @@ export function calculateAssetSummary(
     .filter((proposal) => proposal.decision === 'accepted')
     .reduce<AssetSummary>(
       (summary, proposal) => {
-        if (proposal.category === '부채/미결제') {
+        if (proposal.category === '반복 수입') {
+          summary.monthlyIncome += proposal.amount
+        } else if (proposal.category === '필수 지출') {
+          summary.essentialExpense += proposal.amount
+        } else if (proposal.category === '부채/미결제') {
           summary.totalDebt += proposal.amount
         } else {
           summary.totalAsset += proposal.amount
@@ -92,10 +124,21 @@ export function calculateAssetSummary(
         netWorth: 0,
         liquidAsset: 0,
         investmentAsset: 0,
+        monthlyIncome: 0,
+        essentialExpense: 0,
       },
     )
 }
 
 export function isAssetReviewComplete(proposals: AssetProposal[]): boolean {
   return proposals.every((proposal) => proposal.decision !== 'pending')
+}
+
+export function calculateSalaryAllocationTotal(
+  allocations: SalaryAllocationProposal[],
+): number {
+  return allocations.reduce(
+    (total, allocation) => total + allocation.amount,
+    0,
+  )
 }

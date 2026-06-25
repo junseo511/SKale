@@ -105,7 +105,7 @@ const assetAnalysisSchema = {
           amount: { type: 'number', minimum: 0 },
           category: {
             type: 'string',
-            enum: ['현금성 자산', '저축성 자산', '투자 자산', '목적 자금', '부채/미결제', '기타'],
+            enum: ['반복 수입', '필수 지출', '현금성 자산', '저축성 자산', '투자 자산', '목적 자금', '부채/미결제', '기타'],
           },
           confidence: { type: 'number', minimum: 0, maximum: 1 },
           reason: { type: 'string' },
@@ -117,8 +117,27 @@ const assetAnalysisSchema = {
     insight: { type: 'string' },
     actionItems: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 4 },
     missingData: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+    payday: { type: ['string', 'null'] },
+    salaryAllocations: {
+      type: 'array',
+      maxItems: 7,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          category: {
+            type: 'string',
+            enum: ['필수 생활비', '부채/카드 결제', '비상금', '목적 자금', '저축', '투자', '여유 자금'],
+          },
+          amount: { type: 'number', minimum: 0 },
+          reason: { type: 'string' },
+        },
+        required: ['category', 'amount', 'reason'],
+      },
+    },
+    allocationInsight: { type: 'string' },
   },
-  required: ['proposals', 'healthStatus', 'insight', 'actionItems', 'missingData'],
+  required: ['proposals', 'healthStatus', 'insight', 'actionItems', 'missingData', 'payday', 'salaryAllocations', 'allocationInsight'],
 } as const
 
 const portfolioAnalysisSchema = {
@@ -319,14 +338,24 @@ app.post('/api/assets/analyze', async (request, response, next) => {
         systemInstruction: [
           '너는 개인 자산관리 Agent SKale의 자산 분석 역할이다.',
           '사용자가 제공한 항목과 금액만 사용하고 숫자를 지어내지 않는다.',
-          '각 항목을 현금성 자산, 저축성 자산, 투자 자산, 목적 자금, 부채/미결제, 기타 중 하나로 분류한다.',
-          '소득, 월 생활비, 고정비가 없으면 투자 가능 금액을 단정하지 않고 missingData에 넣는다.',
+          '사용자는 월급, 월급일, 자산, 부채, 필수 지출, 목적 자금을 한 입력에 자연스럽게 섞어 쓸 수 있다.',
+          '월급·상여 등 정기적으로 들어오는 돈은 반복 수입이며 보유 자산에 합산하지 않는다.',
+          '월세·통신비·보험료 등 정기적으로 나가는 돈은 필수 지출이며 부채나 자산에 합산하지 않는다.',
+          '입금되어 현재 계좌에 남아 있는 돈만 현금성 자산이다.',
+          '각 금액 항목을 반복 수입, 필수 지출, 현금성 자산, 저축성 자산, 투자 자산, 목적 자금, 부채/미결제, 기타 중 하나로 분류한다.',
+          '월급일은 payday에 기록하고 금액 proposal로 만들지 않는다.',
+          '반복 수입이 있으면 월급 전체를 필수 생활비, 부채/카드 결제, 비상금, 목적 자금, 저축, 투자, 여유 자금으로 배분한다.',
+          '배분 금액 합계는 반복 수입 합계와 정확히 같아야 한다.',
+          '부채·카드 미결제와 필수 지출을 먼저 반영하고 비상금이 부족하면 투자보다 비상금을 우선한다.',
+          '반복 수입이 없으면 salaryAllocations는 빈 배열로 반환하고 월급 정보를 missingData에 넣는다.',
+          '소득, 월 생활비, 고정비가 부족하면 투자 가능 금액을 단정하지 않고 missingData에 넣는다.',
+          '총자산, 총부채, 순자산 합계는 응답에서 직접 계산하거나 숫자로 단정하지 않는다. 합산은 애플리케이션 코드가 수행한다.',
           '불확실한 항목은 confidence를 낮추며 사용자가 최종 검토한다.',
         ].join('\n'),
         responseMimeType: 'application/json',
         responseJsonSchema: assetAnalysisSchema,
         temperature: 0.1,
-        maxOutputTokens: 4_000,
+        maxOutputTokens: 8_000,
       },
     })
     const analysis = parseModelJson<{
@@ -335,6 +364,13 @@ app.post('/api/assets/analyze', async (request, response, next) => {
       insight: string
       actionItems: string[]
       missingData: string[]
+      payday: string | null
+      salaryAllocations: Array<{
+        category: string
+        amount: number
+        reason: string
+      }>
+      allocationInsight: string
     }>(modelResponse.text)
 
     response.json({
@@ -348,6 +384,10 @@ app.post('/api/assets/analyze', async (request, response, next) => {
         decision: 'pending',
         userNote: '',
       })),
+      payday: analysis.payday || undefined,
+      salaryAllocations: analysis.salaryAllocations,
+      allocationInsight: analysis.allocationInsight,
+      allocationDecision: 'pending',
       appliedFeedback: userFeedback || undefined,
     })
   } catch (error) {
@@ -488,7 +528,11 @@ function parseModelJson<T>(text: string | undefined): T {
   if (!text) {
     throw new Error('AI 응답에 분석 결과가 없습니다.')
   }
-  return JSON.parse(text) as T
+  const normalizedText = text
+    .trim()
+    .replace(/^```json\s*/i, '')
+    .replace(/\s*```$/, '')
+  return JSON.parse(normalizedText) as T
 }
 
 function validateImageSizes(images: z.infer<typeof imageAttachmentSchema>[]): void {

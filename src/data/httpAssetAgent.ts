@@ -35,6 +35,23 @@ export class HttpAssetAgent implements AssetAgent {
       )
     }
 
-    return (await response.json()) as AssetAnalysis
+    const analysis = (await response.json()) as Omit<
+      AssetAnalysis,
+      'salaryAllocations'
+    > & {
+      salaryAllocations?: Array<
+        Omit<AssetAnalysis['salaryAllocations'][number], 'id'>
+      >
+    }
+
+    return {
+      ...analysis,
+      salaryAllocations: (analysis.salaryAllocations ?? []).map(
+        (allocation) => ({
+          ...allocation,
+          id: crypto.randomUUID(),
+        }),
+      ),
+    }
   }
 }

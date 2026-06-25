@@ -31,17 +31,19 @@ interface PortfolioAgentWorkspaceProps {
   agent: PortfolioAgent
   reviewRepository: PortfolioReviewRepository
   assetContext: string
+  suggestedMonthlyAmount: number
 }
 
 export function PortfolioAgentWorkspace({
   agent,
   reviewRepository,
   assetContext,
+  suggestedMonthlyAmount,
 }: PortfolioAgentWorkspaceProps): ReactNode {
   const [riskProfile, setRiskProfile] = useState<RiskProfile>('중립형')
   const [investmentPeriod, setInvestmentPeriod] =
     useState<InvestmentPeriod>('3년 이상')
-  const [monthlyAmount, setMonthlyAmount] = useState(300_000)
+  const [monthlyAmount, setMonthlyAmount] = useState(suggestedMonthlyAmount)
   const [interests, setInterests] = useState('AI, 반도체, 전력 인프라')
   const [strategy, setStrategy] = useState(
     '코어 자산을 중심으로 구조적으로 성장하는 산업을 일부 검토하고 싶습니다.',
