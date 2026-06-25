@@ -24,6 +24,7 @@ npm run build
 
 - `src/domain/paydayConversation.ts`: 대화, 재무 프로필, 월별 사용 요약 계약
 - `src/domain/paydayPlan.ts`: 월급 배분과 포트폴리오 정책
+- `src/domain/netSalary.ts`: 2026년 기준 월 실수령액 모의계산
 - `src/data/httpPaydayConversationAgent.ts`: 명시적 채팅 요청
 - `src/data/localPaydayWorkspaceRepository.ts`: 승인된 대화 컨텍스트 저장
 - `src/data/localPaydayPlanRepository.ts`: 확정 계획의 로컬 저장

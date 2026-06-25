@@ -72,6 +72,7 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 
 .quick-message-list { display: flex; overflow-x: auto; padding: 10px 20px 0; gap: 7px; }
 .quick-message-list button { flex: 0 0 auto; padding: 8px 10px; border: 1px solid #e4dcdd; border-radius: 999px; color: #766b6e; background: white; font-size: 9px; cursor: pointer; }
+.quick-message-list .calculator-quick-button { display: inline-flex; align-items: center; gap: 5px; border-color: #efc4c8; color: #a31220; background: #fff3f4; font-weight: 750; }
 .attachment-preview-list { display: flex; padding: 12px 20px 0; flex-wrap: wrap; gap: 8px; }
 .attachment-preview { display: grid; overflow: hidden; width: 145px; height: 48px; padding: 5px; border: 1px solid #e6dedf; border-radius: 10px; background: #faf7f7; align-items: center; grid-template-columns: 38px 1fr 24px; gap: 6px; }
 .attachment-preview img { width: 38px; height: 38px; border-radius: 7px; object-fit: cover; }
@@ -108,12 +109,19 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .preference-section > span { color: var(--muted); font-size: 9px; }
 .preference-section > div { display: flex; margin-top: 8px; flex-wrap: wrap; gap: 6px; }
 .preference-section i { padding: 6px 8px; border-radius: 999px; color: #971621; background: var(--sk-red-soft); font-size: 8px; font-style: normal; font-weight: 650; }
-.history-list { display: flex; margin-top: 14px; flex-direction: column; gap: 9px; }
-.history-list article { padding: 12px; border: 1px solid #ebe4e5; border-radius: 12px; background: #fdfbfb; }
-.history-list article > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.history-list article > div:first-child span { color: var(--muted); font-size: 9px; }
-.history-list article > div:first-child strong { font-size: 12px; }
-.history-list p { margin: 7px 0; color: #706568; font-size: 9px; line-height: 1.5; }
+.history-carousel { margin-top: 14px; }
+.history-navigation { display: grid; align-items: center; grid-template-columns: 32px 1fr 32px; gap: 8px; }
+.history-navigation button { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid #e5dcdd; border-radius: 10px; color: #74696c; background: white; cursor: pointer; }
+.history-navigation button:disabled { cursor: not-allowed; opacity: .3; }
+.history-navigation > div { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 3px; }
+.history-navigation strong { font-size: 12px; }
+.history-navigation span { color: var(--muted); font-size: 8px; }
+.history-slide { margin-top: 10px; padding: 13px; border: 1px solid #ebe4e5; border-radius: 12px; background: #fdfbfb; }
+.history-slide > p { margin: 9px 0; color: #706568; font-size: 9px; line-height: 1.5; }
+.history-amounts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.history-amounts > div { display: flex; padding: 8px; border-radius: 9px; background: white; flex-direction: column; gap: 4px; }
+.history-amounts span { color: var(--muted); font-size: 7px; }
+.history-amounts strong { font-size: 9px; }
 .history-categories { margin: 0 0 8px; }
 .history-meta { display: flex; align-items: center; gap: 5px; }
 .history-meta span { padding: 4px 6px; border-radius: 999px; color: #8c5e42; background: #fff3e8; font-size: 7px; }
@@ -168,6 +176,46 @@ footer > span { text-align: right; }
 .footer-brand { font-size: 16px; color: var(--ink); }
 .footer-brand .brand-symbol { width: 27px; height: 27px; border-radius: 9px 9px 9px 3px; font-size: 12px; }
 
+.modal-backdrop { position: fixed; z-index: 100; display: grid; inset: 0; overflow-y: auto; padding: 30px 18px; background: rgba(24, 16, 17, .64); place-items: center; }
+.salary-calculator-modal { overflow: hidden; width: min(920px, 100%); border-radius: 24px; background: white; box-shadow: 0 30px 90px rgba(28, 7, 10, .3); }
+.salary-calculator-modal > header { display: flex; padding: 23px 27px; border-bottom: 1px solid var(--line); align-items: flex-start; justify-content: space-between; gap: 20px; }
+.salary-calculator-modal > header span { color: var(--sk-red); font-size: 9px; font-weight: 800; letter-spacing: .8px; }
+.salary-calculator-modal > header h2 { margin: 6px 0 5px; font-size: 23px; letter-spacing: -.7px; }
+.salary-calculator-modal > header p { margin: 0; color: var(--muted); font-size: 10px; }
+.salary-calculator-modal > header button { display: grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 10px; color: #746a6c; background: #f4efef; cursor: pointer; }
+.salary-calculator-layout { display: grid; grid-template-columns: 1.25fr .75fr; }
+.salary-input-panel { display: flex; padding: 27px; flex-direction: column; gap: 20px; }
+.salary-unit-control { display: grid; width: fit-content; padding: 3px; border-radius: 11px; background: #eee9e9; grid-template-columns: repeat(2, 1fr); }
+.salary-unit-control button { min-width: 82px; height: 35px; border: 0; border-radius: 8px; color: #776d70; background: transparent; font-size: 10px; font-weight: 700; cursor: pointer; }
+.salary-unit-control button.selected { color: white; background: #51484a; }
+.salary-unit-control.compact button { min-width: 60px; height: 32px; }
+.calculator-field { display: flex; color: #51494b; font-size: 10px; font-weight: 750; flex-direction: column; gap: 8px; }
+.calculator-money-input { position: relative; }
+.calculator-money-input input { width: 100%; height: 48px; padding: 0 38px 0 13px; border: 1px solid #dcd3d5; border-radius: 11px; text-align: right; font-size: 14px; font-weight: 750; }
+.calculator-money-input span { position: absolute; top: 50%; right: 13px; color: var(--muted); font-size: 9px; transform: translateY(-50%); }
+.amount-shortcuts { display: flex; justify-content: flex-end; gap: 6px; margin-top: -10px; }
+.amount-shortcuts button { height: 30px; padding: 0 9px; border: 1px solid #e1d9da; border-radius: 8px; color: #71676a; background: white; font-size: 8px; cursor: pointer; }
+.people-fields { display: grid; padding-top: 20px; border-top: 1px solid #eee8e8; grid-template-columns: 1fr 1fr; gap: 16px; }
+.count-field { display: flex; flex-direction: column; gap: 8px; }
+.count-field > span { color: #51494b; font-size: 10px; font-weight: 750; }
+.count-field > div { display: flex; align-items: center; }
+.count-field button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #dfd7d8; color: #645a5c; background: white; cursor: pointer; }
+.count-field button:disabled { opacity: .3; cursor: not-allowed; }
+.count-field strong { display: grid; width: 42px; height: 34px; place-items: center; border-top: 1px solid #dfd7d8; border-bottom: 1px solid #dfd7d8; font-size: 11px; }
+.count-field small { margin-left: 6px; color: var(--muted); font-size: 9px; }
+.salary-result-panel { padding: 30px; color: white; background: linear-gradient(145deg, #51484a, #6d1d27); }
+.salary-result-panel > span { color: rgba(255,255,255,.7); font-size: 10px; font-weight: 700; }
+.salary-result-panel > strong { display: block; margin-top: 8px; color: #ff8993; font-size: 30px; letter-spacing: -1px; }
+.salary-result-panel > small { color: rgba(255,255,255,.55); font-size: 8px; }
+.salary-result-panel > div { margin-top: 28px; }
+.salary-result-panel p { display: flex; min-height: 40px; margin: 0; border-bottom: 1px solid rgba(255,255,255,.12); align-items: center; justify-content: space-between; font-size: 9px; }
+.salary-result-panel p span { color: rgba(255,255,255,.67); }
+.salary-result-panel p b { font-size: 10px; }
+.salary-result-panel .deduction-total { margin-top: 8px; border-bottom: 0; font-weight: 800; }
+.calculator-footer { display: flex; min-height: 72px; padding: 15px 27px; border-top: 1px solid var(--line); align-items: center; justify-content: space-between; gap: 20px; }
+.calculator-footer p { max-width: 560px; margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; }
+.calculator-footer button { display: inline-flex; height: 40px; align-items: center; gap: 6px; padding: 0 13px; border: 0; border-radius: 10px; color: white; background: var(--sk-red); font-size: 9px; font-weight: 800; cursor: pointer; }
+
 @keyframes typing { to { opacity: .25; transform: translateY(-2px); } }
 
 @media (max-width: 980px) {
@@ -199,6 +247,10 @@ footer > span { text-align: right; }
   .send-button { justify-content: center; }
   .privacy-copy { margin-left: 13px; margin-right: 13px; }
   .context-panel { grid-template-columns: 1fr; }
+  .salary-calculator-layout { grid-template-columns: 1fr; }
+  .people-fields { grid-template-columns: 1fr; }
+  .calculator-footer { align-items: stretch; flex-direction: column; }
+  .calculator-footer button { justify-content: center; }
   .plan-section { padding-top: 70px; }
   .section-heading h2 { font-size: 26px; }
   .plan-hero { padding: 25px 22px; align-items: flex-start; flex-direction: column; }

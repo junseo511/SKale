@@ -152,7 +152,7 @@ export const INITIAL_AGENT_MESSAGE: ConversationMessage = {
   id: 'initial-agent-message',
   role: 'agent',
   content:
-    '안녕하세요. 이번 월급을 함께 설계해 볼게요. 월 실수령액부터 알려주시거나, 지난달 카드 내역을 텍스트나 사진으로 보내 주세요.',
+    '안녕하세요. 이번 월급을 함께 설계해 볼게요. 월 실수령액부터 알려주시거나, 정리하고 싶은 달의 카드 내역을 텍스트나 사진으로 보내 주세요.',
   createdAt: new Date(0).toISOString(),
   status: 'sent',
   attachments: [],

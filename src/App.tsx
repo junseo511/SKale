@@ -2,16 +2,20 @@ import {
   ArrowUp,
   BadgeCheck,
   Bot,
+  Calculator,
   CalendarDays,
   Check,
+  ChevronLeft,
   ChevronRight,
   CircleAlert,
   FileText,
   ImagePlus,
   LockKeyhole,
   MessageCircleMore,
+  Minus,
   Paperclip,
   PiggyBank,
+  Plus,
   RotateCcw,
   Sparkles,
   Trash2,
@@ -41,6 +45,12 @@ import {
   type MonthlySpendingSummary,
   type PaydayConversationResponse,
 } from './domain/paydayConversation'
+import {
+  estimateNetSalary,
+  type NetSalaryEstimate,
+  type NetSalaryInput,
+  type SalaryUnit,
+} from './domain/netSalary'
 import { createPaydayPlan, type PaydayPlan } from './domain/paydayPlan'
 import './App.css'
 
@@ -52,12 +62,6 @@ const agent = new HttpPaydayConversationAgent({
 })
 const workspaceRepository = new LocalPaydayWorkspaceRepository()
 const planRepository = new LocalPaydayPlanRepository()
-
-const QUICK_MESSAGES = [
-  '월 실수령액은 320만원이야.',
-  '나는 여행과 외식은 포기하고 싶지 않아.',
-  '지난달 사용내역을 정리하고 싶어.',
-]
 
 function App(): ReactNode {
   const savedWorkspace = useMemo(() => workspaceRepository.load(), [])
@@ -80,6 +84,8 @@ function App(): ReactNode {
   const [isReplying, setIsReplying] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [isPlanSaved, setIsPlanSaved] = useState(false)
+  const [isSalaryCalculatorOpen, setIsSalaryCalculatorOpen] =
+    useState(false)
   const abortControllerReference = useRef<AbortController | null>(null)
   const messageEndReference = useRef<HTMLDivElement | null>(null)
 
@@ -99,6 +105,11 @@ function App(): ReactNode {
     [paydayInput],
   )
   const completedProfileFields = countCompletedProfileFields(profile)
+  const quickMessages = [
+    '월 실수령액은 320만원이야.',
+    '나는 여행과 외식은 포기하고 싶지 않아.',
+    `${Number(targetMonth.split('-')[1])}월의 사용 내역을 정리하고 싶어.`,
+  ]
 
   async function sendMessage(): Promise<void> {
     const normalizedDraft = draft.trim()
@@ -382,7 +393,15 @@ function App(): ReactNode {
             </div>
 
             <div className="quick-message-list" aria-label="빠른 메시지">
-              {QUICK_MESSAGES.map((message) => (
+              <button
+                className="calculator-quick-button"
+                type="button"
+                onClick={() => setIsSalaryCalculatorOpen(true)}
+              >
+                <Calculator size={13} />
+                실수령액을 계산하고 싶어요
+              </button>
+              {quickMessages.map((message) => (
                 <button
                   type="button"
                   key={message}
@@ -514,6 +533,31 @@ function App(): ReactNode {
           onSave={savePlan}
         />
       </main>
+
+      {isSalaryCalculatorOpen && (
+        <NetSalaryCalculator
+          onClose={() => setIsSalaryCalculatorOpen(false)}
+          onApply={(monthlyNetSalary) => {
+            setProfile((currentProfile) => ({
+              ...currentProfile,
+              monthlySalary: monthlyNetSalary,
+            }))
+            setMessages((currentMessages) => [
+              ...currentMessages,
+              {
+                id: crypto.randomUUID(),
+                role: 'agent',
+                content: `계산한 예상 월 실수령액 ${formatWon(monthlyNetSalary)}을 재무 프로필에 반영했어요.`,
+                createdAt: new Date().toISOString(),
+                status: 'sent',
+                attachments: [],
+              },
+            ])
+            setIsSalaryCalculatorOpen(false)
+            setIsPlanSaved(false)
+          }}
+        />
+      )}
 
       <footer>
         <div className="brand footer-brand">
@@ -750,6 +794,20 @@ function MonthlyHistoryCard({
   summaries: MonthlySpendingSummary[]
   onDelete: (summaryId: string) => void
 }): ReactNode {
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const sortedSummaries = useMemo(
+    () =>
+      [...summaries].sort((left, right) =>
+        right.month.localeCompare(left.month),
+      ),
+    [summaries],
+  )
+  const safeSelectedIndex = Math.min(
+    selectedIndex,
+    Math.max(sortedSummaries.length - 1, 0),
+  )
+  const selectedSummary = sortedSummaries[safeSelectedIndex]
+
   return (
     <section className="context-card history-card">
       <div className="context-heading">
@@ -759,37 +817,95 @@ function MonthlyHistoryCard({
         </div>
         <strong>{summaries.length}개월</strong>
       </div>
-      {summaries.length > 0 ? (
-        <div className="history-list">
-          {[...summaries]
-            .sort((left, right) => right.month.localeCompare(left.month))
-            .map((summary) => (
-              <article key={summary.id}>
-                <div>
-                  <span>{formatMonth(summary.month)}</span>
-                  <strong>{formatNullableWon(summary.totalExpense)}</strong>
-                </div>
-                <p>{summary.insight}</p>
-                {summary.notableCategories.length > 0 && (
-                  <div className="history-categories">
-                    {summary.notableCategories.map((category) => (
-                      <span key={category}>{category}</span>
-                    ))}
-                  </div>
+      {selectedSummary ? (
+        <div className="history-carousel">
+          <div className="history-navigation">
+            <button
+              type="button"
+              aria-label="더 최근 월 보기"
+              disabled={safeSelectedIndex === 0}
+              onClick={() =>
+                setSelectedIndex((currentIndex) =>
+                  Math.max(currentIndex - 1, 0),
+                )
+              }
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <div>
+              <strong>{formatMonth(selectedSummary.month)}</strong>
+              <span>
+                {safeSelectedIndex + 1} / {sortedSummaries.length}
+              </span>
+            </div>
+            <button
+              type="button"
+              aria-label="더 이전 월 보기"
+              disabled={
+                safeSelectedIndex === sortedSummaries.length - 1
+              }
+              onClick={() =>
+                setSelectedIndex((currentIndex) =>
+                  Math.min(
+                    currentIndex + 1,
+                    sortedSummaries.length - 1,
+                  ),
+                )
+              }
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+          <article className="history-slide">
+            <div className="history-amounts">
+              <SummaryValue
+                label="총소비"
+                value={formatNullableWon(selectedSummary.totalExpense)}
+              />
+              <SummaryValue
+                label="필수지출"
+                value={formatNullableWon(
+                  selectedSummary.essentialExpense,
                 )}
-                <div className="history-meta">
-                  <span>{summary.source === 'text' ? '텍스트' : summary.source === 'image' ? '사진' : '텍스트+사진'}</span>
-                  {summary.needReview && <span>확인 필요</span>}
-                  <button
-                    type="button"
-                    aria-label={`${formatMonth(summary.month)} 기록 삭제`}
-                    onClick={() => onDelete(summary.id)}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </article>
-            ))}
+              />
+              <SummaryValue
+                label="선택지출"
+                value={formatNullableWon(
+                  selectedSummary.flexibleExpense,
+                )}
+              />
+            </div>
+            <p>{selectedSummary.insight}</p>
+            {selectedSummary.notableCategories.length > 0 && (
+              <div className="history-categories">
+                {selectedSummary.notableCategories.map((category) => (
+                  <span key={category}>{category}</span>
+                ))}
+              </div>
+            )}
+            <div className="history-meta">
+              <span>
+                {selectedSummary.source === 'text'
+                  ? '텍스트'
+                  : selectedSummary.source === 'image'
+                    ? '사진'
+                    : '텍스트+사진'}
+              </span>
+              {selectedSummary.needReview && <span>확인 필요</span>}
+              <button
+                type="button"
+                aria-label={`${formatMonth(selectedSummary.month)} 기록 삭제`}
+                onClick={() => {
+                  onDelete(selectedSummary.id)
+                  setSelectedIndex((currentIndex) =>
+                    Math.max(currentIndex - 1, 0),
+                  )
+                }}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </article>
         </div>
       ) : (
         <div className="history-empty">
@@ -799,6 +915,264 @@ function MonthlyHistoryCard({
         </div>
       )}
     </section>
+  )
+}
+
+function NetSalaryCalculator({
+  onClose,
+  onApply,
+}: {
+  onClose: () => void
+  onApply: (monthlyNetSalary: number) => void
+}): ReactNode {
+  const [input, setInput] = useState<NetSalaryInput>({
+    salaryUnit: 'annual',
+    salaryAmount: 40_000_000,
+    severanceIncluded: false,
+    dependents: 1,
+    childrenUnderTwenty: 0,
+    monthlyNonTaxableAmount: 200_000,
+  })
+  const estimate = useMemo(() => estimateNetSalary(input), [input])
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="salary-calculator-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="salary-calculator-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header>
+          <div>
+            <span>2026 예상 계산</span>
+            <h2 id="salary-calculator-title">월 실수령액 계산기</h2>
+            <p>사람인 연봉계산기의 입력 구조를 참고해 공제액을 나눠 보여줘요.</p>
+          </div>
+          <button type="button" aria-label="계산기 닫기" onClick={onClose}>
+            <X size={19} />
+          </button>
+        </header>
+
+        <div className="salary-calculator-layout">
+          <div className="salary-input-panel">
+            <div className="salary-unit-control">
+              {(['annual', 'monthly'] as SalaryUnit[]).map((unit) => (
+                <button
+                  className={input.salaryUnit === unit ? 'selected' : ''}
+                  type="button"
+                  key={unit}
+                  onClick={() => setInput({ ...input, salaryUnit: unit })}
+                >
+                  {unit === 'annual' ? '연봉' : '월급'}
+                </button>
+              ))}
+            </div>
+
+            {input.salaryUnit === 'annual' && (
+              <label className="calculator-field">
+                퇴직금
+                <div className="salary-unit-control compact">
+                  <button
+                    className={!input.severanceIncluded ? 'selected' : ''}
+                    type="button"
+                    onClick={() =>
+                      setInput({ ...input, severanceIncluded: false })
+                    }
+                  >
+                    별도
+                  </button>
+                  <button
+                    className={input.severanceIncluded ? 'selected' : ''}
+                    type="button"
+                    onClick={() =>
+                      setInput({ ...input, severanceIncluded: true })
+                    }
+                  >
+                    포함
+                  </button>
+                </div>
+              </label>
+            )}
+
+            <MoneyCalculatorField
+              label={input.salaryUnit === 'annual' ? '연봉' : '월 급여액'}
+              value={input.salaryAmount}
+              onChange={(salaryAmount) =>
+                setInput({ ...input, salaryAmount })
+              }
+            />
+
+            <div className="amount-shortcuts">
+              {[10_000_000, 1_000_000, 100_000].map((amount) => (
+                <button
+                  type="button"
+                  key={amount}
+                  onClick={() =>
+                    setInput({
+                      ...input,
+                      salaryAmount: input.salaryAmount + amount,
+                    })
+                  }
+                >
+                  +{amount / 10_000}만
+                </button>
+              ))}
+            </div>
+
+            <div className="people-fields">
+              <CountField
+                label="부양 가족 수 (본인 포함)"
+                value={input.dependents}
+                minimum={1}
+                onChange={(dependents) =>
+                  setInput({
+                    ...input,
+                    dependents,
+                    childrenUnderTwenty: Math.min(
+                      input.childrenUnderTwenty,
+                      dependents - 1,
+                    ),
+                  })
+                }
+              />
+              <CountField
+                label="20세 이하 자녀 수"
+                value={input.childrenUnderTwenty}
+                minimum={0}
+                maximum={Math.max(input.dependents - 1, 0)}
+                onChange={(childrenUnderTwenty) =>
+                  setInput({ ...input, childrenUnderTwenty })
+                }
+              />
+            </div>
+
+            <MoneyCalculatorField
+              label="월 비과세액"
+              value={input.monthlyNonTaxableAmount}
+              onChange={(monthlyNonTaxableAmount) =>
+                setInput({ ...input, monthlyNonTaxableAmount })
+              }
+            />
+          </div>
+
+          <SalaryEstimatePanel estimate={estimate} />
+        </div>
+
+        <div className="calculator-footer">
+          <p>
+            모의 계산 결과이며 실제 급여명세서, 회사 지급 조건, 국세청
+            간이세액표 적용 방식에 따라 차이가 날 수 있어요.
+          </p>
+          <button
+            type="button"
+            onClick={() => onApply(estimate.monthlyNetSalary)}
+          >
+            <Check size={16} />
+            {formatWon(estimate.monthlyNetSalary)}을 프로필에 적용
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function SalaryEstimatePanel({
+  estimate,
+}: {
+  estimate: NetSalaryEstimate
+}): ReactNode {
+  const deductions = [
+    ['국민연금', estimate.deductions.nationalPension],
+    ['건강보험', estimate.deductions.healthInsurance],
+    ['장기요양', estimate.deductions.longTermCareInsurance],
+    ['고용보험', estimate.deductions.employmentInsurance],
+    ['소득세', estimate.deductions.incomeTax],
+    ['지방소득세', estimate.deductions.localIncomeTax],
+  ] as const
+
+  return (
+    <aside className="salary-result-panel">
+      <span>예상 월 실수령액</span>
+      <strong>{formatWon(estimate.monthlyNetSalary)}</strong>
+      <small>월 급여 {formatWon(estimate.monthlyGrossSalary)} 기준</small>
+      <div>
+        {deductions.map(([label, amount]) => (
+          <p key={label}>
+            <span>{label}</span>
+            <b>{formatWon(amount)}</b>
+          </p>
+        ))}
+        <p className="deduction-total">
+          <span>공제액 합계</span>
+          <b>{formatWon(estimate.totalDeductions)}</b>
+        </p>
+      </div>
+    </aside>
+  )
+}
+
+function MoneyCalculatorField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+}): ReactNode {
+  return (
+    <label className="calculator-field">
+      {label}
+      <div className="calculator-money-input">
+        <input
+          inputMode="numeric"
+          value={value === 0 ? '' : Math.round(value).toLocaleString()}
+          placeholder="0"
+          onChange={(event) => onChange(parseMoney(event.target.value))}
+        />
+        <span>원</span>
+      </div>
+    </label>
+  )
+}
+
+function CountField({
+  label,
+  value,
+  minimum,
+  maximum = 10,
+  onChange,
+}: {
+  label: string
+  value: number
+  minimum: number
+  maximum?: number
+  onChange: (value: number) => void
+}): ReactNode {
+  return (
+    <div className="count-field">
+      <span>{label}</span>
+      <div>
+        <button
+          type="button"
+          disabled={value <= minimum}
+          onClick={() => onChange(Math.max(value - 1, minimum))}
+        >
+          <Minus size={15} />
+        </button>
+        <strong>{value}</strong>
+        <button
+          type="button"
+          disabled={value >= maximum}
+          onClick={() => onChange(Math.min(value + 1, maximum))}
+        >
+          <Plus size={15} />
+        </button>
+        <small>명</small>
+      </div>
+    </div>
   )
 }
 
@@ -1007,6 +1381,10 @@ function formatMonth(value: string): string {
 
 function formatWon(value: number): string {
   return `${Math.round(value).toLocaleString()}원`
+}
+
+function parseMoney(value: string): number {
+  return Number(value.replaceAll(',', '').replace(/\D/g, '')) || 0
 }
 
 function formatNullableWon(value: number | null): string {
