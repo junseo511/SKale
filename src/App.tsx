@@ -9,6 +9,7 @@ import {
   ChevronRight,
   CircleAlert,
   FileText,
+  Globe2,
   ImagePlus,
   LockKeyhole,
   MessageCircleMore,
@@ -18,8 +19,10 @@ import {
   Plus,
   RotateCcw,
   Sparkles,
+  TrendingUp,
   Trash2,
   UserRound,
+  WalletCards,
   X,
 } from 'lucide-react'
 import {
@@ -106,9 +109,12 @@ function App(): ReactNode {
   )
   const completedProfileFields = countCompletedProfileFields(profile)
   const quickMessages = [
-    '월 실수령액은 320만원이야.',
-    '나는 여행과 외식은 포기하고 싶지 않아.',
     `${Number(targetMonth.split('-')[1])}월의 사용 내역을 정리하고 싶어.`,
+    '외식과 여행 예산은 너무 줄이고 싶지 않아.',
+    plan && plan.availableInvestmentAmount > 0
+      ? `${formatWon(plan.availableInvestmentAmount)}으로 미국과 한국 주식 포트폴리오를 구성해줘.`
+      : '내 상황에 맞는 미국과 한국 주식 투자 비중을 알고 싶어.',
+    '관심 종목을 장기 투자 기준으로 점검하고 싶어.',
   ]
 
   async function sendMessage(): Promise<void> {
@@ -294,10 +300,6 @@ function App(): ReactNode {
           <span>SKale</span>
         </a>
         <div className="header-actions">
-          <span className="ai-status">
-            <span className="status-dot" />
-            명시적 전송에서만 AI 호출
-          </span>
           <button
             className="icon-button"
             type="button"
@@ -313,36 +315,36 @@ function App(): ReactNode {
         <section className="intro-section">
           <div>
             <span className="eyebrow">
-              <MessageCircleMore size={15} />
-              Conversational payday agent
+              <WalletCards size={15} />
+              월급 관리, 한 번에
             </span>
             <h1>
-              월급 계획은
+              이번 월급,
               <br />
-              <em>대화로 만들어야 하니까.</em>
+              <em>어떻게 나눌까요?</em>
             </h1>
             <p>
-              지난 소비를 보여주고, 포기하고 싶지 않은 취향을 말해 주세요.
-              SKale이 질문하고 사용자가 승인한 정보만 월급 계획에 반영합니다.
+              월급과 지난 소비를 알려주세요. 생활비부터 저축, 투자까지
+              지금 상황에 맞게 정리해 드릴게요.
             </p>
           </div>
           <div className="intro-principles">
             <Principle
               icon={<FileText />}
-              title="과거를 이해하고"
-              text="텍스트·사진 사용내역"
+              title="지난 소비 확인"
+              text="사진이나 텍스트로"
             />
             <ChevronRight size={18} />
             <Principle
               icon={<UserRound />}
-              title="취향을 기억하고"
-              text="지키고 싶은 소비"
+              title="내 기준 반영"
+              text="줄이고 싶지 않은 지출"
             />
             <ChevronRight size={18} />
             <Principle
               icon={<PiggyBank />}
-              title="이번 달을 설계해요"
-              text="안전망 이후 투자"
+              title="월급 나누기"
+              text="쓸 돈부터 투자까지"
             />
           </div>
         </section>
@@ -355,12 +357,12 @@ function App(): ReactNode {
                   <Bot size={19} />
                 </span>
                 <div>
-                  <strong>SKale Agent</strong>
-                  <p>재무 프로필을 함께 완성하는 중</p>
+                  <strong>월급 플래너</strong>
+                  <p>한 가지씩 알려주시면 돼요</p>
                 </div>
               </div>
               <span className="completion-badge">
-                {completedProfileFields}/{PROFILE_FIELD_COUNT} 확인
+                {completedProfileFields}/{PROFILE_FIELD_COUNT} 입력
               </span>
             </div>
 
@@ -377,7 +379,7 @@ function App(): ReactNode {
                     <i />
                     <i />
                     <i />
-                    사용자의 말과 자료를 살펴보고 있어요
+                    내용을 정리하고 있어요
                   </div>
                 </div>
               )}
@@ -392,24 +394,34 @@ function App(): ReactNode {
               <div ref={messageEndReference} />
             </div>
 
-            <div className="quick-message-list" aria-label="빠른 메시지">
-              <button
-                className="calculator-quick-button"
-                type="button"
-                onClick={() => setIsSalaryCalculatorOpen(true)}
-              >
-                <Calculator size={13} />
-                실수령액을 계산하고 싶어요
-              </button>
-              {quickMessages.map((message) => (
+            <div className="suggestion-section">
+              <span>이렇게 시작해 보세요</span>
+              <div className="quick-message-list" aria-label="추천 질문">
                 <button
+                  className="calculator-quick-button"
                   type="button"
-                  key={message}
-                  onClick={() => setDraft(message)}
+                  onClick={() => setIsSalaryCalculatorOpen(true)}
                 >
-                  {message}
+                  <Calculator size={16} />
+                  실수령액 입력하기
                 </button>
-              ))}
+                {quickMessages.map((message, index) => (
+                  <button
+                    type="button"
+                    key={message}
+                    onClick={() => setDraft(message)}
+                  >
+                    {index === 2 ? (
+                      <Globe2 size={16} />
+                    ) : index === 3 ? (
+                      <TrendingUp size={16} />
+                    ) : (
+                      <MessageCircleMore size={16} />
+                    )}
+                    {message}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {attachments.length > 0 && (
@@ -450,7 +462,7 @@ function App(): ReactNode {
               <textarea
                 aria-label="SKale Agent에게 보낼 메시지"
                 value={draft}
-                placeholder="예: 월급은 320만원이고, 외식비는 너무 줄이고 싶지 않아."
+                placeholder="궁금한 점이나 내 상황을 편하게 적어주세요"
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {
                   if (
@@ -499,15 +511,14 @@ function App(): ReactNode {
                   onClick={() => void sendMessage()}
                 >
                   <ArrowUp size={18} />
-                  Agent에게 보내기
+                  보내기
                 </button>
               </div>
             </div>
 
             <p className="privacy-copy">
               <LockKeyhole size={13} />
-              사진의 계좌번호·카드번호·이름은 가려 주세요. 첨부 원본은
-              localStorage에 저장하지 않습니다.
+              사진을 올릴 땐 계좌번호와 카드번호를 가려주세요.
             </p>
           </section>
 
@@ -564,7 +575,7 @@ function App(): ReactNode {
           <span className="brand-symbol">S</span>
           <span>SKale</span>
         </div>
-        <p>과거 소비와 취향을 듣고 월급의 역할을 함께 정하는 Agent</p>
+        <p>내 상황에 맞게 월급을 나눠보세요.</p>
         <span>결과는 참고용이며 금융 자문이 아닙니다.</span>
       </footer>
     </div>
@@ -713,7 +724,7 @@ function ProposalCards({
           )}
           {response.missingData.length > 0 && (
             <div>
-              <strong>계획에 더 필요한 정보</strong>
+              <strong>다음으로 알려주세요</strong>
               <ul>
                 {response.missingData.map((item) => (
                   <li key={item}>{item}</li>
@@ -740,14 +751,14 @@ function ProfileCard({
     ['카드·부채', formatNullableWon(profile.debtPayment)],
     ['현재 비상금', formatNullableWon(profile.currentEmergencyFund)],
     ['비상금 목표', formatNullableWon(profile.targetEmergencyFund)],
-    ['목표', profile.goalName || '대화로 확인'],
+    ['목표', profile.goalName || '아직 안 알려주셨어요'],
     ['목표 저축', formatNullableWon(profile.goalMonthlyAmount)],
     ['여유 생활비', formatNullableWon(profile.flexibleSpending)],
     [
       '투자 조건',
       profile.riskProfile && profile.investmentHorizon
         ? `${profile.riskProfile} · ${profile.investmentHorizon}`
-        : '대화로 확인',
+        : '아직 안 알려주셨어요',
     ],
   ]
 
@@ -755,8 +766,8 @@ function ProfileCard({
     <section className="context-card profile-card">
       <div className="context-heading">
         <div>
-          <span>LIVE PROFILE</span>
-          <h2>대화로 확인한 나의 기준</h2>
+          <span>내 정보</span>
+          <h2>지금까지 입력한 내용</h2>
         </div>
         <strong>{Math.round((completed / PROFILE_FIELD_COUNT) * 100)}%</strong>
       </div>
@@ -767,7 +778,11 @@ function ProfileCard({
         {items.map(([label, value]) => (
           <div key={label}>
             <dt>{label}</dt>
-            <dd className={value === '대화로 확인' ? 'empty' : ''}>
+            <dd
+              className={
+                value === '아직 안 알려주셨어요' ? 'empty' : ''
+              }
+            >
               {value}
             </dd>
           </div>
@@ -812,8 +827,8 @@ function MonthlyHistoryCard({
     <section className="context-card history-card">
       <div className="context-heading">
         <div>
-          <span>MONTHLY MEMORY</span>
-          <h2>과거 월 사용내역</h2>
+          <span>월별 소비</span>
+          <h2>지난 사용 내역</h2>
         </div>
         <strong>{summaries.length}개월</strong>
       </div>
@@ -910,8 +925,8 @@ function MonthlyHistoryCard({
       ) : (
         <div className="history-empty">
           <ImagePlus size={23} />
-          <strong>아직 기억한 월이 없어요.</strong>
-          <p>지난 카드 내역 사진이나 거래 텍스트를 대화로 보내 주세요.</p>
+          <strong>아직 불러온 내역이 없어요</strong>
+          <p>확인할 달을 고르고 카드 내역 사진이나 텍스트를 보내주세요.</p>
         </div>
       )}
     </section>
@@ -925,6 +940,10 @@ function NetSalaryCalculator({
   onClose: () => void
   onApply: (monthlyNetSalary: number) => void
 }): ReactNode {
+  const [inputMethod, setInputMethod] = useState<'direct' | 'estimate'>(
+    'direct',
+  )
+  const [directMonthlySalary, setDirectMonthlySalary] = useState(3_200_000)
   const [input, setInput] = useState<NetSalaryInput>({
     salaryUnit: 'annual',
     salaryAmount: 40_000_000,
@@ -934,6 +953,10 @@ function NetSalaryCalculator({
     monthlyNonTaxableAmount: 200_000,
   })
   const estimate = useMemo(() => estimateNetSalary(input), [input])
+  const amountToApply =
+    inputMethod === 'direct'
+      ? directMonthlySalary
+      : estimate.monthlyNetSalary
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -946,17 +969,47 @@ function NetSalaryCalculator({
       >
         <header>
           <div>
-            <span>2026 예상 계산</span>
-            <h2 id="salary-calculator-title">월 실수령액 계산기</h2>
-            <p>사람인 연봉계산기의 입력 구조를 참고해 공제액을 나눠 보여줘요.</p>
+            <span>월급 입력</span>
+            <h2 id="salary-calculator-title">실수령액을 알려주세요</h2>
+            <p>알고 있는 금액을 바로 입력하거나 연봉으로 계산할 수 있어요.</p>
           </div>
           <button type="button" aria-label="계산기 닫기" onClick={onClose}>
             <X size={19} />
           </button>
         </header>
 
-        <div className="salary-calculator-layout">
-          <div className="salary-input-panel">
+        <div className="salary-method-tabs">
+          <button
+            className={inputMethod === 'direct' ? 'selected' : ''}
+            type="button"
+            onClick={() => setInputMethod('direct')}
+          >
+            실수령액 직접 입력
+          </button>
+          <button
+            className={inputMethod === 'estimate' ? 'selected' : ''}
+            type="button"
+            onClick={() => setInputMethod('estimate')}
+          >
+            연봉으로 계산
+          </button>
+        </div>
+
+        {inputMethod === 'direct' ? (
+          <div className="direct-salary-panel">
+            <MoneyCalculatorField
+              label="한 달 실수령액"
+              value={directMonthlySalary}
+              onChange={setDirectMonthlySalary}
+            />
+            <p>
+              급여명세서나 통장에 들어온 금액을 적어주세요. 이 금액을 기준으로
+              월급 계획을 만들어요.
+            </p>
+          </div>
+        ) : (
+          <div className="salary-calculator-layout">
+            <div className="salary-input-panel">
             <div className="salary-unit-control">
               {(['annual', 'monthly'] as SalaryUnit[]).map((unit) => (
                 <button
@@ -1055,22 +1108,25 @@ function NetSalaryCalculator({
                 setInput({ ...input, monthlyNonTaxableAmount })
               }
             />
-          </div>
+            </div>
 
-          <SalaryEstimatePanel estimate={estimate} />
-        </div>
+            <SalaryEstimatePanel estimate={estimate} />
+          </div>
+        )}
 
         <div className="calculator-footer">
           <p>
-            모의 계산 결과이며 실제 급여명세서, 회사 지급 조건, 국세청
-            간이세액표 적용 방식에 따라 차이가 날 수 있어요.
+            {inputMethod === 'direct'
+              ? '입력한 금액은 언제든 다시 바꿀 수 있어요.'
+              : '예상 금액이에요. 실제 급여명세서와 다를 수 있어요.'}
           </p>
           <button
             type="button"
-            onClick={() => onApply(estimate.monthlyNetSalary)}
+            disabled={amountToApply <= 0}
+            onClick={() => onApply(amountToApply)}
           >
             <Check size={16} />
-            {formatWon(estimate.monthlyNetSalary)}을 프로필에 적용
+            {formatWon(amountToApply)} 입력하기
           </button>
         </div>
       </section>
@@ -1192,8 +1248,8 @@ function PlanSection({
       <div className="section-heading">
         <div>
           <span>PAYDAY PLAN</span>
-          <h2>대화가 충분해지면 계획이 완성돼요</h2>
-          <p>Agent의 제안을 적용한 정보만 월급 배분 계산에 사용합니다.</p>
+          <h2>입력한 내용으로 월급을 나눠드려요</h2>
+          <p>필요한 정보가 모이면 생활비, 저축, 투자 금액을 바로 보여드려요.</p>
         </div>
       </div>
 
@@ -1223,7 +1279,7 @@ function PlanSection({
               ))}
             </div>
             <aside className="portfolio-summary">
-              <span>투자금 배분 예시</span>
+              <span>투자금 나누기</span>
               <h3>
                 {profile.riskProfile} · {profile.investmentHorizon}
               </h3>
@@ -1239,11 +1295,11 @@ function PlanSection({
                   ))}
                 </div>
               ) : (
-                <p>이번 달은 안전망을 먼저 채워 투자 배분이 없어요.</p>
+                <p>이번 달은 비상금을 먼저 채우는 편이 좋아요.</p>
               )}
               <button className="save-button" type="button" onClick={onSave}>
                 {isSaved ? <BadgeCheck size={17} /> : <Check size={17} />}
-                {isSaved ? '이번 월급 계획 저장됨' : '이번 월급 계획 확정'}
+                {isSaved ? '저장했어요' : '이 계획 저장하기'}
               </button>
             </aside>
           </div>
@@ -1254,10 +1310,10 @@ function PlanSection({
             <Sparkles size={22} />
           </span>
           <div>
-            <strong>아직 몇 가지 기준이 더 필요해요.</strong>
+            <strong>조금만 더 알려주세요</strong>
             <p>
-              월급, 생활비, 비상금, 목표, 투자 조건을 대화로 알려주면 이
-              자리에 배분안이 나타납니다.
+              월급과 생활비, 비상금, 투자 생각을 알려주시면 바로 계산해
+              드릴게요.
             </p>
           </div>
         </div>

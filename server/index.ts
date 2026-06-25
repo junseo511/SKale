@@ -521,6 +521,8 @@ app.post('/api/payday/chat', async (request, response, next) => {
           'Create monthlySpendingProposal only when the current message or attachments actually contain prior spending data. Otherwise return null.',
           'Do not overwrite an already confirmed profile value unless the user clearly asks to change it.',
           'The application code calculates salary allocation and investable cash. Do not claim that you finalized those amounts.',
+          'When the user asks how to divide an investable amount between Korean and US stocks, provide a Korean reference allocation by region and diversified asset type, explain the reasoning and risks, and use only the amount and preferences provided by the user.',
+          'When the user asks to review a stock, ask for the company name and the financial or business information needed by the existing long-term stock-review framework. Do not invent current prices, earnings, or valuation data.',
           'After addressing the user request, ask about at most one most important missing financial item.',
           'Do not give instructions to buy, sell, or hold a specific financial product.',
           'If the message is unrelated to salary, spending, saving, debt, financial goals, or investment planning, or if its meaning cannot be understood with reasonable confidence, do not guess.',
