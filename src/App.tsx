@@ -33,7 +33,13 @@ import {
   Route,
   Routes,
 } from 'react-router-dom'
+import { LocalSpendingReviewRepository } from './data/localSpendingReviewRepository'
+import { MockSpendingAgent } from './data/mockSpendingAgent'
+import { SpendingAgentWorkspace } from './features/spending/SpendingAgentWorkspace'
 import './App.css'
+
+const spendingAgent = new MockSpendingAgent()
+const spendingReviewRepository = new LocalSpendingReviewRepository()
 
 const navigationItems = [
   { to: '/', label: '대시보드', icon: LayoutDashboard },
@@ -54,12 +60,6 @@ const assetData = [
   { name: '현금', value: 2_000_000 },
   { name: '저축', value: 1_000_000 },
   { name: '투자', value: 3_500_000 },
-]
-
-const transactions = [
-  { merchant: '월세', amount: '500,000원', category: '고정비', confidence: '98%' },
-  { merchant: '스타벅스', amount: '6,300원', category: '식비·카페', confidence: '94%' },
-  { merchant: '미래에셋증권', amount: '300,000원', category: '투자', confidence: '96%' },
 ]
 
 function App() {
@@ -237,26 +237,15 @@ function DashboardPage() {
 function SpendingPage() {
   return (
     <PageContainer>
-      <PageHeader icon={<ReceiptText />} title="소비 분석" description="결제 내역을 입력하면 소비·저축·투자·이체를 구분하고 지출을 분류해요." />
-      <div className="two-column-layout">
-        <InputCard title="직접 입력" description="한 줄에 거래 하나씩 자유롭게 입력하세요.">
-          <textarea defaultValue={'6/25 스타벅스 6,300원\n6/25 월세 500,000원\n6/25 미래에셋증권 300,000원'} aria-label="소비 내역" />
-          <div className="button-row">
-            <button className="button secondary" type="button">예시 불러오기</button>
-            <button className="button primary" type="button"><Sparkles size={17} />AI 분석하기</button>
-          </div>
-        </InputCard>
-        <NoticeCard icon={<ShieldCheck />} title="캡처 분석은 준비 중이에요" description="실제 계좌번호, 카드번호 등 민감정보를 가린 이미지로만 이용해 주세요." />
-      </div>
-      <SectionHeading title="분석 결과" description="투자와 이체는 일반 소비 합계에서 제외했어요." />
-      <div className="table-card">
-        <div className="data-table-header"><span>사용처</span><span>금액</span><span>분류</span><span>신뢰도</span></div>
-        {transactions.map((item) => (
-          <div className="data-table-row" key={item.merchant}>
-            <strong>{item.merchant}</strong><span>{item.amount}</span><span className="status-badge">{item.category}</span><span>{item.confidence}</span>
-          </div>
-        ))}
-      </div>
+      <PageHeader
+        icon={<ReceiptText />}
+        title="소비 분석"
+        description="AI가 먼저 제안하고, 사용자가 수정·수락·거절해 함께 소비 기록을 완성해요."
+      />
+      <SpendingAgentWorkspace
+        agent={spendingAgent}
+        reviewRepository={spendingReviewRepository}
+      />
     </PageContainer>
   )
 }
