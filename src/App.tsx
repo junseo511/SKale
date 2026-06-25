@@ -1,7 +1,6 @@
 import {
   ArrowRight,
   BarChart3,
-  BriefcaseBusiness,
   CircleDollarSign,
   LayoutDashboard,
   Menu,
@@ -33,15 +32,26 @@ import {
   Route,
   Routes,
 } from 'react-router-dom'
+import { LocalAssetReviewRepository } from './data/localAssetReviewRepository'
 import { LocalSpendingReviewRepository } from './data/localSpendingReviewRepository'
+import { OpenAiAssetAgent } from './data/openAiAssetAgent'
 import { OpenAiSpendingAgent } from './data/openAiSpendingAgent'
+import { calculateAssetSummary, type AssetProposal } from './domain/assets'
+import {
+  calculateExpenseTotal,
+  type SpendingProposal,
+} from './domain/spending'
+import { AssetAgentWorkspace } from './features/assets/AssetAgentWorkspace'
 import { SpendingAgentWorkspace } from './features/spending/SpendingAgentWorkspace'
 import './App.css'
 
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
 const spendingAgent = new OpenAiSpendingAgent({
-  baseUrl: import.meta.env.VITE_API_BASE_URL,
+  baseUrl: apiBaseUrl,
 })
 const spendingReviewRepository = new LocalSpendingReviewRepository()
+const assetAgent = new OpenAiAssetAgent({ baseUrl: apiBaseUrl })
+const assetReviewRepository = new LocalAssetReviewRepository()
 
 const navigationItems = [
   { to: '/', label: '대시보드', icon: LayoutDashboard },
@@ -51,18 +61,7 @@ const navigationItems = [
   { to: '/stocks', label: '종목 분석', icon: TrendingUp },
 ]
 
-const spendingData = [
-  { name: '고정비', value: 500_000, color: '#6c5ce7' },
-  { name: '식비·카페', value: 189_850, color: '#00a896' },
-  { name: '생활비', value: 158_000, color: '#f4a261' },
-  { name: '여행', value: 250_000, color: '#e76f51' },
-]
-
-const assetData = [
-  { name: '현금', value: 2_000_000 },
-  { name: '저축', value: 1_000_000 },
-  { name: '투자', value: 3_500_000 },
-]
+const chartColors = ['#6c5ce7', '#00a896', '#f4a261', '#e76f51', '#457b9d']
 
 function App() {
   return (
@@ -151,6 +150,17 @@ function AppLayout({ children }: { children: ReactNode }) {
 }
 
 function DashboardPage() {
+  const confirmedSpending = spendingReviewRepository.loadLatest()
+  const confirmedAssets = assetReviewRepository.loadLatest()
+  const expenseTotal = confirmedSpending
+    ? calculateExpenseTotal(confirmedSpending.proposals)
+    : 0
+  const assetSummary = confirmedAssets
+    ? calculateAssetSummary(confirmedAssets.proposals)
+    : null
+  const spendingData = buildSpendingChartData(confirmedSpending?.proposals ?? [])
+  const assetData = buildAssetChartData(confirmedAssets?.proposals ?? [])
+
   return (
     <PageContainer>
       <section className="hero-section">
@@ -170,14 +180,32 @@ function DashboardPage() {
       </section>
 
       <section className="metric-grid" aria-label="자산 요약">
-        <MetricCard icon={<ReceiptText />} label="이번 달 지출" value="1,097,850원" detail="지난달보다 8.2% 증가" tone="coral" />
-        <MetricCard icon={<WalletCards />} label="순자산" value="6,080,000원" detail="이전 기록보다 330,000원 증가" tone="violet" />
-        <MetricCard icon={<CircleDollarSign />} label="월 투자 여력" value="300,000원" detail="미결제 금액 반영 전" tone="teal" />
+        <MetricCard
+          icon={<ReceiptText />}
+          label="확정 소비"
+          value={confirmedSpending ? `${expenseTotal.toLocaleString()}원` : '분석 전'}
+          detail="사용자가 수락한 소비만 반영"
+          tone="coral"
+        />
+        <MetricCard
+          icon={<WalletCards />}
+          label="확정 순자산"
+          value={assetSummary ? `${assetSummary.netWorth.toLocaleString()}원` : '분석 전'}
+          detail="승인된 자산에서 부채를 차감"
+          tone="violet"
+        />
+        <MetricCard
+          icon={<CircleDollarSign />}
+          label="투자 여력"
+          value="추가 정보 필요"
+          detail="소득·생활비·목적 자금 확인 후 산정"
+          tone="teal"
+        />
       </section>
 
       <section className="dashboard-grid">
         <ChartCard title="카테고리별 지출" description="일반 소비만 집계했어요.">
-          <div className="chart-with-legend">
+          {spendingData.length > 0 ? <div className="chart-with-legend">
             <div className="donut-chart">
               <ResponsiveContainer width="100%" height="100%">
                 <RechartsPieChart>
@@ -187,21 +215,21 @@ function DashboardPage() {
                   <Tooltip formatter={(value) => `${Number(value).toLocaleString()}원`} />
                 </RechartsPieChart>
               </ResponsiveContainer>
-              <div className="donut-center"><strong>109만</strong><span>총지출</span></div>
+              <div className="donut-center"><strong>{formatCompactWon(expenseTotal)}</strong><span>확정 소비</span></div>
             </div>
             <ul className="chart-legend">
               {spendingData.map((item) => (
                 <li key={item.name}>
                   <span className="legend-label"><i style={{ background: item.color }} />{item.name}</span>
-                  <strong>{Math.round((item.value / 1_097_850) * 100)}%</strong>
+                  <strong>{Math.round((item.value / expenseTotal) * 100)}%</strong>
                 </li>
               ))}
             </ul>
-          </div>
+          </div> : <DashboardEmptyState to="/spending" message="소비 내역을 AI와 검토하면 차트가 표시돼요." />}
         </ChartCard>
 
         <ChartCard title="자산 구성" description="부채를 제외한 총자산 기준이에요.">
-          <div className="bar-chart">
+          {assetData.length > 0 ? <div className="bar-chart">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={assetData} margin={{ top: 18, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="#eceaf3" />
@@ -211,7 +239,7 @@ function DashboardPage() {
                 <Bar dataKey="value" fill="#6c5ce7" radius={[8, 8, 0, 0]} barSize={42} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          </div> : <DashboardEmptyState to="/assets" message="자산 현황을 AI와 검토하면 구성이 표시돼요." />}
         </ChartCard>
       </section>
 
@@ -219,8 +247,8 @@ function DashboardPage() {
         <div className="insight-icon"><Sparkles size={22} /></div>
         <div>
           <span className="section-kicker">SKale AI 코멘트</span>
-          <h2>순자산은 늘었지만 여행 지출도 함께 커졌어요.</h2>
-          <p>카드 미결제 금액을 먼저 반영한 후 이번 달 투자 가능 금액을 확정하는 게 안전합니다.</p>
+          <h2>{confirmedAssets?.insight ?? '확정된 자산 분석이 아직 없어요.'}</h2>
+          <p>{confirmedAssets?.actionItems[0] ?? '자산 현황을 입력하고 AI 제안을 검토해 첫 재무 기준점을 만들어 보세요.'}</p>
         </div>
       </section>
 
@@ -255,19 +283,15 @@ function SpendingPage() {
 function AssetsPage() {
   return (
     <PageContainer>
-      <PageHeader icon={<WalletCards />} title="자산 분석" description="은행과 증권 앱에 흩어진 자산을 정리하고 순자산 변화를 확인하세요." />
-      <InputCard title="현재 자산 입력" description="자산과 부채를 함께 입력하면 순자산을 계산해요.">
-        <textarea defaultValue={'토스뱅크 1,200,000원\n카카오뱅크 800,000원\n주식계좌 3,500,000원\n신용카드 미결제 420,000원'} aria-label="자산 현황" />
-        <div className="button-row">
-          <button className="button secondary" type="button">예시 불러오기</button>
-          <button className="button primary" type="button"><Sparkles size={17} />AI 분석하기</button>
-        </div>
-      </InputCard>
-      <div className="metric-grid">
-        <MetricCard icon={<BriefcaseBusiness />} label="총자산" value="6,500,000원" detail="현금·저축·투자 합계" tone="violet" />
-        <MetricCard icon={<ReceiptText />} label="부채·미결제" value="420,000원" detail="결제 예정 금액 포함" tone="coral" />
-        <MetricCard icon={<TrendingUp />} label="순자산" value="6,080,000원" detail="+330,000원 · 5.74%" tone="teal" />
-      </div>
+      <PageHeader
+        icon={<WalletCards />}
+        title="자산 분석"
+        description="AI가 자산과 부채를 제안하고, 사용자가 승인한 숫자로 순자산을 함께 확정해요."
+      />
+      <AssetAgentWorkspace
+        agent={assetAgent}
+        reviewRepository={assetReviewRepository}
+      />
     </PageContainer>
   )
 }
@@ -341,6 +365,61 @@ function InputCard({ title, description, children }: { title: string; descriptio
 
 function NoticeCard({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
   return <aside className="notice-card"><div className="notice-icon">{icon}</div><div><h2>{title}</h2><p>{description}</p></div></aside>
+}
+
+function DashboardEmptyState({ to, message }: { to: string; message: string }) {
+  return (
+    <NavLink className="dashboard-empty-state" to={to}>
+      <Sparkles size={22} />
+      <span>{message}</span>
+      <strong>분석 시작하기 <ArrowRight size={15} /></strong>
+    </NavLink>
+  )
+}
+
+function buildSpendingChartData(proposals: SpendingProposal[]) {
+  const totals = new Map<string, number>()
+
+  proposals
+    .filter(
+      (proposal) =>
+        proposal.decision === 'accepted' &&
+        (proposal.nature === 'expense' || proposal.nature === 'fixedExpense'),
+    )
+    .forEach((proposal) => {
+      const category = proposal.spendingCategory ?? '기타'
+      totals.set(category, (totals.get(category) ?? 0) + proposal.amount)
+    })
+
+  return [...totals.entries()].map(([name, value], index) => ({
+    name,
+    value,
+    color: chartColors[index % chartColors.length],
+  }))
+}
+
+function buildAssetChartData(proposals: AssetProposal[]) {
+  const totals = new Map<string, number>()
+
+  proposals
+    .filter(
+      (proposal) =>
+        proposal.decision === 'accepted' &&
+        proposal.category !== '부채/미결제',
+    )
+    .forEach((proposal) => {
+      const shortName = proposal.category.replace(' 자산', '')
+      totals.set(shortName, (totals.get(shortName) ?? 0) + proposal.amount)
+    })
+
+  return [...totals.entries()].map(([name, value]) => ({ name, value }))
+}
+
+function formatCompactWon(value: number): string {
+  if (value >= 10_000) {
+    return `${Math.round(value / 10_000).toLocaleString()}만`
+  }
+  return value.toLocaleString()
 }
 
 export default App

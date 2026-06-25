@@ -199,6 +199,19 @@ label { color: #4c4757; font-size: 13px; font-weight: 650; }
 .confirmed-card span { color: #087d6d; font-size: 11px; font-weight: 750; }
 .confirmed-card h2 { margin: 5px 0 6px; font-size: 18px; }
 .confirmed-card p { margin: 0; color: #55716b; font-size: 12px; line-height: 1.55; }
+.asset-health-panel { display: grid; align-items: start; gap: 20px; padding: 18px 20px; border: 1px solid #ddd8fa; border-radius: 14px; background: #f8f6ff; grid-template-columns: 130px 1fr; }
+.asset-health-panel > div { display: flex; flex-direction: column; gap: 5px; }
+.asset-health-panel span { color: var(--color-text-secondary); font-size: 11px; font-weight: 650; }
+.asset-health-panel strong { color: var(--color-primary); font-size: 20px; }
+.asset-health-panel ul { display: grid; margin: 0; padding-left: 18px; color: #5f5969; font-size: 12px; line-height: 1.6; gap: 4px; }
+.missing-data-panel { display: flex; align-items: flex-start; gap: 11px; padding: 15px 17px; border: 1px solid #ecd9b8; border-radius: 12px; color: #8d5f1e; background: #fffaf0; }
+.missing-data-panel svg { flex: 0 0 auto; margin-top: 1px; }
+.missing-data-panel strong { font-size: 12px; }
+.missing-data-panel p { margin: 4px 0 0; color: #8a7351; font-size: 11px; line-height: 1.5; }
+.dashboard-empty-state { display: flex; min-height: 245px; align-items: center; justify-content: center; padding: 30px; border: 1px dashed #d8d2e9; border-radius: 14px; color: var(--color-text-secondary); background: #faf9fc; text-align: center; flex-direction: column; gap: 10px; }
+.dashboard-empty-state svg { color: var(--color-primary); }
+.dashboard-empty-state span { max-width: 270px; font-size: 13px; line-height: 1.55; }
+.dashboard-empty-state strong { display: inline-flex; align-items: center; gap: 5px; color: var(--color-primary); font-size: 12px; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes agent-pulse {
@@ -261,4 +274,5 @@ label { color: #4c4757; font-size: 13px; font-weight: 650; }
   .proposal-note-field { grid-column: 1; }
   .proposal-action { gap: 4px; font-size: 11px; }
   .review-footer { align-items: stretch; flex-direction: column; }
+  .asset-health-panel { grid-template-columns: 1fr; }
 }
