@@ -56,6 +56,15 @@ const stockAnalysisRequestSchema = z.object({
   userFeedback: z.string().trim().max(2_000).optional(),
 })
 
+const customSalaryUseSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    amount: z.number().nonnegative(),
+    bucket: z.enum(['essential', 'goal', 'flexible']),
+    note: z.string().trim().max(200),
+  })
+  .strict()
+
 const financialProfileSchema = z.object({
   monthlySalary: z.number().nonnegative().nullable(),
   essentialExpense: z.number().nonnegative().nullable(),
@@ -70,6 +79,7 @@ const financialProfileSchema = z.object({
     .enum(['1년 미만', '1~3년', '3년 이상'])
     .nullable(),
   preferences: z.array(z.string().trim().min(1).max(300)).max(20),
+  customUses: z.array(customSalaryUseSchema).max(20).default([]),
 })
 
 const monthlySpendingSummarySchema = z.object({
@@ -107,6 +117,7 @@ const paydayConversationModelResponseValidationSchema = z
           .array(z.string().trim().min(1).max(300))
           .max(8)
           .nullable(),
+        customUses: z.array(customSalaryUseSchema).max(20).nullable(),
       })
       .strict(),
     monthlySpendingProposal: z
@@ -342,6 +353,24 @@ const paydayConversationResponseSchema = {
           items: { type: 'string' },
           maxItems: 8,
         },
+        customUses: {
+          type: ['array', 'null'],
+          maxItems: 20,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              name: { type: 'string' },
+              amount: { type: 'number', minimum: 0 },
+              bucket: {
+                type: 'string',
+                enum: ['essential', 'goal', 'flexible'],
+              },
+              note: { type: 'string' },
+            },
+            required: ['name', 'amount', 'bucket', 'note'],
+          },
+        },
       },
       required: [
         'monthlySalary',
@@ -355,6 +384,7 @@ const paydayConversationResponseSchema = {
         'riskProfile',
         'investmentHorizon',
         'preferences',
+        'customUses',
       ],
     },
     monthlySpendingProposal: {
@@ -514,6 +544,12 @@ app.post('/api/payday/chat', async (request, response, next) => {
           'Only place facts that the user stated clearly or that are directly visible in the submitted data into profilePatch. Never infer or invent a value.',
           'Return null for every profilePatch field that should not change.',
           'Record only budget-relevant lifestyle preferences as short Korean sentences in preferences.',
+          'When the user names recurring payday destinations with explicit monthly amounts, structure them in customUses.',
+          'Classify unavoidable recurring obligations as essential, named future savings as goal, and protected lifestyle spending as flexible.',
+          'customUses are subdivisions of the three budget buckets, not additional spending outside the salary plan.',
+          'When adding, changing, or removing a custom use, return the complete desired customUses list and preserve existing items unless the user clearly asks to change or remove them.',
+          'Only change an aggregate bucket amount when the user explicitly changes that whole bucket; otherwise the application will synchronize a bucket from the custom uses listed for that bucket without clearing unrelated buckets.',
+          'Never invent a custom-use amount. If the amount is missing or ambiguous, ask one concise clarification question and return null for customUses.',
           'When the user submits prior-month spending data as text or images, create a monthly summary proposal using targetMonth.',
           'If targetMonth is missing or any number in an image is unclear, set needReview to true and ask a concise clarification question in Korean.',
           'Add only verifiable expense transactions. Exclude transfers, savings, investments, refunds, and income from expense totals.',
@@ -521,7 +557,9 @@ app.post('/api/payday/chat', async (request, response, next) => {
           'Create monthlySpendingProposal only when the current message or attachments actually contain prior spending data. Otherwise return null.',
           'Do not overwrite an already confirmed profile value unless the user clearly asks to change it.',
           'The application code calculates salary allocation and investable cash. Do not claim that you finalized those amounts.',
-          'When the user asks how to divide an investable amount between Korean and US stocks, provide a Korean reference allocation by region and diversified asset type, explain the reasoning and risks, and use only the amount and preferences provided by the user.',
+          'When the user asks you to construct a stock portfolio, treat Korea, the United States, or both as a user-selected market constraint rather than the main recommendation.',
+          'Construct a Korean-language reference portfolio for the selected market using the provided investable amount, risk profile, investment horizon, and preferences. Show allocations and amounts by diversified ETF or stock-candidate role, explain why each position exists, and list major risks.',
+          'Do not invent current prices, financial results, or valuation data. If exact share counts or individual stock selection require current data that was not provided, state that limitation in Korean and give a reviewable candidate framework instead.',
           'When the user asks to review a stock, ask for the company name and the financial or business information needed by the existing long-term stock-review framework. Do not invent current prices, earnings, or valuation data.',
           'After addressing the user request, ask about at most one most important missing financial item.',
           'Do not give instructions to buy, sell, or hold a specific financial product.',

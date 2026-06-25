@@ -1,5 +1,13 @@
 export type RiskProfile = '안정형' | '균형형' | '성장형'
 export type InvestmentHorizon = '1년 미만' | '1~3년' | '3년 이상'
+export type CustomSalaryUseBucket = 'essential' | 'goal' | 'flexible'
+
+export interface CustomSalaryUse {
+  name: string
+  amount: number
+  bucket: CustomSalaryUseBucket
+  note: string
+}
 
 export interface PaydayInput {
   monthlySalary: number
@@ -12,6 +20,7 @@ export interface PaydayInput {
   flexibleSpending: number
   riskProfile: RiskProfile
   investmentHorizon: InvestmentHorizon
+  customUses: CustomSalaryUse[]
 }
 
 export type AllocationRole =
@@ -28,6 +37,7 @@ export interface SalaryAllocation {
   amount: number
   reason: string
   priority: number
+  details: CustomSalaryUse[]
 }
 
 export interface PortfolioAllocation {
@@ -87,6 +97,7 @@ export function createPaydayPlan(input: PaydayInput): PaydayPlan {
       amount: essentialExpense,
       reason: '주거비·통신비처럼 이번 달 반드시 지켜야 할 지출이에요.',
       priority: 1,
+      details: usesFor(input.customUses, 'essential'),
     },
     {
       role: 'debt',
@@ -94,6 +105,7 @@ export function createPaydayPlan(input: PaydayInput): PaydayPlan {
       amount: debtPayment,
       reason: '연체와 이자 부담을 피하기 위해 투자보다 먼저 확보해요.',
       priority: 2,
+      details: [],
     },
     {
       role: 'emergency',
@@ -104,6 +116,7 @@ export function createPaydayPlan(input: PaydayInput): PaydayPlan {
           ? '목표 비상금까지의 부족분을 월급의 20% 한도에서 채워요.'
           : '비상금 목표를 이미 달성해 이번 달 추가 배분은 생략했어요.',
       priority: 3,
+      details: [],
     },
     {
       role: 'goal',
@@ -111,6 +124,7 @@ export function createPaydayPlan(input: PaydayInput): PaydayPlan {
       amount: goalAmount,
       reason: '가까운 시일에 쓸 돈은 투자금과 분리해 변동성을 피해야 해요.',
       priority: 4,
+      details: usesFor(input.customUses, 'goal'),
     },
     {
       role: 'flexible',
@@ -118,6 +132,7 @@ export function createPaydayPlan(input: PaydayInput): PaydayPlan {
       amount: flexibleSpending,
       reason: '계획을 오래 유지할 수 있도록 자유롭게 쓸 한도를 남겨요.',
       priority: 5,
+      details: usesFor(input.customUses, 'flexible'),
     },
     {
       role: 'investment',
@@ -125,6 +140,7 @@ export function createPaydayPlan(input: PaydayInput): PaydayPlan {
       amount: investmentAmount,
       reason: '앞선 안전장치를 모두 반영하고 실제로 남은 금액만 투자해요.',
       priority: 6,
+      details: [],
     },
   ]
 
@@ -308,4 +324,11 @@ function createGuidance(
 
 function positive(value: number): number {
   return Number.isFinite(value) ? Math.max(Math.round(value), 0) : 0
+}
+
+function usesFor(
+  customUses: CustomSalaryUse[],
+  bucket: CustomSalaryUseBucket,
+): CustomSalaryUse[] {
+  return customUses.filter((use) => use.bucket === bucket)
 }

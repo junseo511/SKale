@@ -2,6 +2,7 @@ import type {
   InvestmentHorizon,
   PaydayInput,
   RiskProfile,
+  CustomSalaryUse,
 } from './paydayPlan'
 import { z } from 'zod'
 
@@ -49,6 +50,7 @@ export interface FinancialProfile {
   riskProfile: RiskProfile | null
   investmentHorizon: InvestmentHorizon | null
   preferences: string[]
+  customUses: CustomSalaryUse[]
 }
 
 export interface FinancialProfilePatch {
@@ -63,6 +65,7 @@ export interface FinancialProfilePatch {
   riskProfile?: RiskProfile
   investmentHorizon?: InvestmentHorizon
   preferences?: string[]
+  customUses?: CustomSalaryUse[]
 }
 
 export interface PaydayConversationRequest {
@@ -91,6 +94,19 @@ const financialProfilePatchSchema = z
       .enum(['1년 미만', '1~3년', '3년 이상'])
       .optional(),
     preferences: z.array(z.string().trim().min(1).max(300)).max(8).optional(),
+    customUses: z
+      .array(
+        z
+          .object({
+            name: z.string().trim().min(1).max(80),
+            amount: z.number().nonnegative(),
+            bucket: z.enum(['essential', 'goal', 'flexible']),
+            note: z.string().trim().max(200),
+          })
+          .strict(),
+      )
+      .max(20)
+      .optional(),
   })
   .strict()
 
@@ -146,6 +162,7 @@ export const EMPTY_FINANCIAL_PROFILE: FinancialProfile = {
   riskProfile: null,
   investmentHorizon: null,
   preferences: [],
+  customUses: [],
 }
 
 export const INITIAL_AGENT_MESSAGE: ConversationMessage = {
@@ -162,13 +179,42 @@ export function applyFinancialProfilePatch(
   profile: FinancialProfile,
   patch: FinancialProfilePatch,
 ): FinancialProfile {
-  return {
+  const nextProfile = {
     ...profile,
     ...patch,
     preferences: patch.preferences
       ? [...new Set([...profile.preferences, ...patch.preferences])]
       : profile.preferences,
+    customUses: patch.customUses ?? profile.customUses,
   }
+
+  if (patch.customUses) {
+    const totals = calculateCustomUseTotals(patch.customUses)
+    if (
+      patch.essentialExpense === undefined &&
+      hasCustomUseInBucket(patch.customUses, 'essential')
+    ) {
+      nextProfile.essentialExpense = totals.essential
+    }
+    if (
+      patch.goalMonthlyAmount === undefined &&
+      hasCustomUseInBucket(patch.customUses, 'goal')
+    ) {
+      nextProfile.goalMonthlyAmount = totals.goal
+    }
+    if (
+      patch.flexibleSpending === undefined &&
+      hasCustomUseInBucket(patch.customUses, 'flexible')
+    ) {
+      nextProfile.flexibleSpending = totals.flexible
+    }
+    const goalUse = patch.customUses.find((use) => use.bucket === 'goal')
+    if (goalUse && !patch.goalName) {
+      nextProfile.goalName = goalUse.name
+    }
+  }
+
+  return nextProfile
 }
 
 export function toPaydayInput(profile: FinancialProfile): PaydayInput | null {
@@ -197,7 +243,27 @@ export function toPaydayInput(profile: FinancialProfile): PaydayInput | null {
     flexibleSpending: profile.flexibleSpending,
     riskProfile: profile.riskProfile,
     investmentHorizon: profile.investmentHorizon,
+    customUses: profile.customUses,
   }
+}
+
+function hasCustomUseInBucket(
+  customUses: CustomSalaryUse[],
+  bucket: CustomSalaryUse['bucket'],
+): boolean {
+  return customUses.some((use) => use.bucket === bucket)
+}
+
+function calculateCustomUseTotals(
+  customUses: CustomSalaryUse[],
+): Record<CustomSalaryUse['bucket'], number> {
+  return customUses.reduce(
+    (totals, use) => ({
+      ...totals,
+      [use.bucket]: totals[use.bucket] + use.amount,
+    }),
+    { essential: 0, goal: 0, flexible: 0 },
+  )
 }
 
 export function countCompletedProfileFields(

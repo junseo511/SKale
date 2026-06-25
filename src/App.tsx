@@ -57,6 +57,8 @@ import {
 import { createPaydayPlan, type PaydayPlan } from './domain/paydayPlan'
 import './App.css'
 
+type PortfolioMarket = '한국' | '미국' | '한국·미국'
+
 const MAX_IMAGE_COUNT = 4
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024
 const PROFILE_FIELD_COUNT = 9
@@ -73,9 +75,15 @@ function App(): ReactNode {
       ? savedWorkspace.messages
       : [INITIAL_AGENT_MESSAGE],
   )
-  const [profile, setProfile] = useState<FinancialProfile>(
-    savedWorkspace?.profile ?? EMPTY_FINANCIAL_PROFILE,
-  )
+  const [profile, setProfile] = useState<FinancialProfile>(() => {
+    const savedProfile = savedWorkspace?.profile
+    return {
+      ...EMPTY_FINANCIAL_PROFILE,
+      ...savedProfile,
+      preferences: savedProfile?.preferences ?? [],
+      customUses: savedProfile?.customUses ?? [],
+    }
+  })
   const [monthlySpending, setMonthlySpending] = useState<
     MonthlySpendingSummary[]
   >(savedWorkspace?.monthlySpending ?? [])
@@ -89,6 +97,8 @@ function App(): ReactNode {
   const [isPlanSaved, setIsPlanSaved] = useState(false)
   const [isSalaryCalculatorOpen, setIsSalaryCalculatorOpen] =
     useState(false)
+  const [portfolioMarket, setPortfolioMarket] =
+    useState<PortfolioMarket>('미국')
   const abortControllerReference = useRef<AbortController | null>(null)
   const messageEndReference = useRef<HTMLDivElement | null>(null)
 
@@ -110,12 +120,14 @@ function App(): ReactNode {
   const completedProfileFields = countCompletedProfileFields(profile)
   const quickMessages = [
     `${Number(targetMonth.split('-')[1])}월의 사용 내역을 정리하고 싶어.`,
+    '월세 70만원, 부모님 용돈 20만원, 운동비 10만원을 매달 먼저 빼줘.',
     '외식과 여행 예산은 너무 줄이고 싶지 않아.',
-    plan && plan.availableInvestmentAmount > 0
-      ? `${formatWon(plan.availableInvestmentAmount)}으로 미국과 한국 주식 포트폴리오를 구성해줘.`
-      : '내 상황에 맞는 미국과 한국 주식 투자 비중을 알고 싶어.',
     '관심 종목을 장기 투자 기준으로 점검하고 싶어.',
   ]
+  const portfolioRequest =
+    plan && plan.availableInvestmentAmount > 0
+      ? `${formatWon(plan.availableInvestmentAmount)}으로 ${portfolioMarket} 주식 포트폴리오를 구성해줘. 종목이나 ETF별 금액과 비중, 구성 이유, 주요 위험을 함께 알려줘.`
+      : `${portfolioMarket} 주식 포트폴리오를 구성하고 싶어. 내 상황에서 투자할 수 있는 금액과 투자 성향부터 확인해줘.`
 
   async function sendMessage(): Promise<void> {
     const normalizedDraft = draft.trim()
@@ -411,16 +423,48 @@ function App(): ReactNode {
                     key={message}
                     onClick={() => setDraft(message)}
                   >
-                    {index === 2 ? (
-                      <Globe2 size={16} />
-                    ) : index === 3 ? (
+                    {index === 3 ? (
                       <TrendingUp size={16} />
+                    ) : index === 1 ? (
+                      <WalletCards size={16} />
                     ) : (
                       <MessageCircleMore size={16} />
                     )}
                     {message}
                   </button>
                 ))}
+                <div className="portfolio-suggestion-card">
+                  <div>
+                    <Globe2 size={17} />
+                    <span>주식 포트폴리오 만들기</span>
+                  </div>
+                  <div className="market-selector" aria-label="투자 시장 선택">
+                    {(['한국', '미국', '한국·미국'] as PortfolioMarket[]).map(
+                      (market) => (
+                        <button
+                          className={
+                            portfolioMarket === market ? 'selected' : ''
+                          }
+                          type="button"
+                          key={market}
+                          onClick={() => setPortfolioMarket(market)}
+                        >
+                          {market === '한국·미국' ? '둘 다' : market}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                  <button
+                    className="portfolio-request-button"
+                    type="button"
+                    onClick={() => setDraft(portfolioRequest)}
+                  >
+                    {plan && plan.availableInvestmentAmount > 0
+                      ? `${formatWon(plan.availableInvestmentAmount)}으로 구성 요청`
+                      : '구성 요청하기'}
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -518,7 +562,7 @@ function App(): ReactNode {
 
             <p className="privacy-copy">
               <LockKeyhole size={13} />
-              사진을 올릴 땐 계좌번호와 카드번호를 가려주세요.
+              사진을 올릴 땐 민감한 개인정보를 가려주세요.
             </p>
           </section>
 
@@ -576,7 +620,7 @@ function App(): ReactNode {
           <span>SKale</span>
         </div>
         <p>내 상황에 맞게 월급을 나눠보세요.</p>
-        <span>결과는 참고용이며 금융 자문이 아닙니다.</span>
+        <span>본 자료의 정보는 참고용이며, 투자에 대한 책임은 본인에게 있습니다.</span>
       </footer>
     </div>
   )
@@ -630,12 +674,14 @@ function ProposalCards({
   onApplyMonthlySpending: () => void
 }): ReactNode {
   const profileEntries = getProfilePatchEntries(response.profilePatch)
+  const customUses = response.profilePatch.customUses
   const spendingProposal = response.monthlySpendingProposal
   const hasResponseContext =
     response.appliedFacts.length > 0 || response.missingData.length > 0
 
   if (
     profileEntries.length === 0 &&
+    customUses === undefined &&
     !spendingProposal &&
     !hasResponseContext
   ) {
@@ -644,7 +690,7 @@ function ProposalCards({
 
   return (
     <div className="proposal-stack">
-      {profileEntries.length > 0 && (
+      {(profileEntries.length > 0 || customUses !== undefined) && (
         <article className="agent-proposal">
           <div className="proposal-heading">
             <span>
@@ -664,6 +710,27 @@ function ProposalCards({
               </li>
             ))}
           </ul>
+          {customUses !== undefined && (
+            <div className="custom-use-proposal">
+              <strong>매달 먼저 나눠둘 사용처</strong>
+              {customUses.length > 0 ? (
+                <div>
+                  {customUses.map((use) => (
+                    <article key={`${use.bucket}-${use.name}`}>
+                      <span>
+                        <b>{use.name}</b>
+                        <small>{formatCustomUseBucket(use.bucket)}</small>
+                      </span>
+                      <strong>{formatWon(use.amount)}</strong>
+                      {use.note && <p>{use.note}</p>}
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p>등록된 사용처를 모두 비우는 제안이에요.</p>
+              )}
+            </div>
+          )}
         </article>
       )}
 
@@ -796,6 +863,25 @@ function ProfileCard({
               <i key={preference}>{preference}</i>
             ))}
           </div>
+        </div>
+      )}
+      {profile.customUses.length > 0 && (
+        <div className="profile-custom-uses">
+          <div>
+            <span>매달 먼저 나눠둘 사용처</span>
+            <small>대화로 추가하거나 금액을 바꿀 수 있어요.</small>
+          </div>
+          <ul>
+            {profile.customUses.map((use) => (
+              <li key={`${use.bucket}-${use.name}`}>
+                <span>
+                  <strong>{use.name}</strong>
+                  <small>{formatCustomUseBucket(use.bucket)}</small>
+                </span>
+                <b>{formatWon(use.amount)}</b>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </section>
@@ -1273,6 +1359,16 @@ function PlanSection({
                   <div>
                     <strong>{allocation.label}</strong>
                     <p>{allocation.reason}</p>
+                    {allocation.details.length > 0 && (
+                      <ul className="allocation-detail-list">
+                        {allocation.details.map((detail) => (
+                          <li key={`${detail.bucket}-${detail.name}`}>
+                            <span>{detail.name}</span>
+                            <b>{formatWon(detail.amount)}</b>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                   <b>{formatWon(allocation.amount)}</b>
                 </article>
@@ -1372,18 +1468,31 @@ function getProfilePatchEntries(
     riskProfile: '투자 성향',
     investmentHorizon: '투자 기간',
     preferences: '지키고 싶은 취향',
+    customUses: '월급 사용처',
   }
 
   return (Object.entries(patch) as Array<
     [keyof FinancialProfilePatch, FinancialProfilePatch[keyof FinancialProfilePatch]]
-  >).map(([key, value]) => [
-    labels[key],
-    Array.isArray(value)
-      ? value.join(' · ')
-      : typeof value === 'number'
-        ? formatWon(value)
-        : String(value),
-  ])
+  >)
+    .filter(([key]) => key !== 'customUses')
+    .map(([key, value]) => [
+      labels[key],
+      Array.isArray(value)
+        ? value.join(' · ')
+        : typeof value === 'number'
+          ? formatWon(value)
+          : String(value),
+    ])
+}
+
+function formatCustomUseBucket(
+  bucket: 'essential' | 'goal' | 'flexible',
+): string {
+  return {
+    essential: '필수 생활비',
+    goal: '목표 자금',
+    flexible: '여유 생활비',
+  }[bucket]
 }
 
 async function readAttachment(file: File): Promise<ConversationAttachment> {

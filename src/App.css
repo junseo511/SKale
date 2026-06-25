@@ -58,6 +58,15 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .agent-proposal li { display: flex; padding: 11px 12px; border-radius: 9px; background: white; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
 .agent-proposal li span { color: var(--muted); }
 .agent-proposal li strong { text-align: right; }
+.custom-use-proposal { margin-top: 13px; padding-top: 13px; border-top: 1px solid #efd7d9; }
+.custom-use-proposal > strong { color: #74141c; font-size: 13px; }
+.custom-use-proposal > div { display: grid; margin-top: 9px; gap: 7px; }
+.custom-use-proposal article { display: grid; padding: 11px 12px; border-radius: 10px; background: white; align-items: center; grid-template-columns: 1fr auto; gap: 4px 10px; }
+.custom-use-proposal article span { display: flex; align-items: center; gap: 7px; }
+.custom-use-proposal article span b { font-size: 13px; }
+.custom-use-proposal article small { padding: 3px 6px; border-radius: 999px; color: #8e2832; background: #fae7e9; font-size: 11px; }
+.custom-use-proposal article > strong { color: #521014; font-size: 14px; }
+.custom-use-proposal article p, .custom-use-proposal > p { grid-column: 1 / -1; margin: 2px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .spending-proposal-grid { display: grid; margin-top: 12px; grid-template-columns: repeat(3, 1fr); gap: 7px; }
 .spending-proposal-grid > div { display: flex; padding: 10px; border-radius: 10px; background: white; flex-direction: column; gap: 4px; }
 .spending-proposal-grid span { color: var(--muted); font-size: 11px; }
@@ -76,6 +85,13 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .quick-message-list button { display: flex; min-height: 48px; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid #e4dcdd; border-radius: 12px; color: #62585b; background: white; font-size: 13px; line-height: 1.4; text-align: left; cursor: pointer; }
 .quick-message-list button svg { flex: 0 0 auto; color: var(--sk-red); }
 .quick-message-list .calculator-quick-button { border-color: #efc4c8; color: #a31220; background: #fff3f4; font-weight: 750; }
+.portfolio-suggestion-card { display: flex; min-height: 112px; padding: 13px; border: 1px solid #e4dcdd; border-radius: 12px; background: white; flex-direction: column; gap: 10px; }
+.portfolio-suggestion-card > div:first-child { display: flex; align-items: center; gap: 8px; color: #62585b; font-size: 13px; font-weight: 750; }
+.portfolio-suggestion-card > div:first-child svg { color: var(--sk-red); }
+.market-selector { display: grid; padding: 3px; border-radius: 9px; background: #f2eded; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+.market-selector button { min-height: 30px; padding: 0 7px; border: 0; border-radius: 7px; color: #786e70; background: transparent; font-size: 12px; text-align: center; justify-content: center; }
+.market-selector button.selected { color: #a31220; background: white; box-shadow: 0 2px 8px rgba(66, 26, 31, .08); font-weight: 800; }
+.portfolio-suggestion-card .portfolio-request-button { min-height: 34px; padding: 0 9px; border: 0; color: #a31220; background: #fff2f3; justify-content: space-between; font-size: 12px; font-weight: 750; }
 .attachment-preview-list { display: flex; padding: 12px 20px 0; flex-wrap: wrap; gap: 8px; }
 .attachment-preview { display: grid; overflow: hidden; width: 145px; height: 48px; padding: 5px; border: 1px solid #e6dedf; border-radius: 10px; background: #faf7f7; align-items: center; grid-template-columns: 38px 1fr 24px; gap: 6px; }
 .attachment-preview img { width: 38px; height: 38px; border-radius: 7px; object-fit: cover; }
@@ -112,6 +128,16 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .preference-section > span { color: var(--muted); font-size: 12px; }
 .preference-section > div { display: flex; margin-top: 8px; flex-wrap: wrap; gap: 6px; }
 .preference-section i { padding: 7px 9px; border-radius: 999px; color: #971621; background: var(--sk-red-soft); font-size: 11px; font-style: normal; font-weight: 650; }
+.profile-custom-uses { margin-top: 18px; padding-top: 15px; border-top: 1px solid #eee7e8; }
+.profile-custom-uses > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.profile-custom-uses > div span { font-size: 13px; font-weight: 800; }
+.profile-custom-uses > div small { color: var(--muted); font-size: 11px; }
+.profile-custom-uses ul { display: grid; margin: 10px 0 0; padding: 0; list-style: none; gap: 7px; }
+.profile-custom-uses li { display: flex; padding: 10px 11px; border-radius: 10px; background: #faf6f6; align-items: center; justify-content: space-between; gap: 10px; }
+.profile-custom-uses li span { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.profile-custom-uses li strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.profile-custom-uses li small { color: var(--muted); font-size: 11px; }
+.profile-custom-uses li b { color: #85131d; font-size: 13px; white-space: nowrap; }
 .history-carousel { margin-top: 14px; }
 .history-navigation { display: grid; align-items: center; grid-template-columns: 32px 1fr 32px; gap: 8px; }
 .history-navigation button { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid #e5dcdd; border-radius: 10px; color: #74696c; background: white; cursor: pointer; }
@@ -153,6 +179,9 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .allocation-summary article div { min-width: 0; }
 .allocation-summary article strong { font-size: 14px; }
 .allocation-summary article p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.allocation-detail-list { display: grid; margin: 8px 0 0; padding: 0; list-style: none; gap: 4px; }
+.allocation-detail-list li { display: flex; padding: 5px 8px; border-radius: 7px; color: #6d5558; background: #faf4f5; align-items: center; justify-content: space-between; gap: 10px; font-size: 11px; }
+.allocation-detail-list li b { color: #8f1923; font-size: 11px; }
 .allocation-summary article b { font-size: 15px; }
 .portfolio-summary { padding: 20px; border-radius: 16px; background: #f8f4f4; }
 .portfolio-summary > span { color: var(--sk-red); font-size: 11px; font-weight: 800; }
