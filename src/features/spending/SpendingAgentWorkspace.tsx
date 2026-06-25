@@ -100,7 +100,11 @@ export function SpendingAgentWorkspace({
       if (error instanceof DOMException && error.name === 'AbortError') {
         return
       }
-      setErrorMessage('분석 중 문제가 발생했습니다. 입력 내용을 확인하고 다시 시도해 주세요.')
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : '분석 중 문제가 발생했습니다. 입력 내용을 확인하고 다시 시도해 주세요.',
+      )
       setStatus('error')
     }
   }

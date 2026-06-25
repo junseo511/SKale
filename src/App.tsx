@@ -34,11 +34,13 @@ import {
   Routes,
 } from 'react-router-dom'
 import { LocalSpendingReviewRepository } from './data/localSpendingReviewRepository'
-import { MockSpendingAgent } from './data/mockSpendingAgent'
+import { OpenAiSpendingAgent } from './data/openAiSpendingAgent'
 import { SpendingAgentWorkspace } from './features/spending/SpendingAgentWorkspace'
 import './App.css'
 
-const spendingAgent = new MockSpendingAgent()
+const spendingAgent = new OpenAiSpendingAgent({
+  baseUrl: import.meta.env.VITE_API_BASE_URL,
+})
 const spendingReviewRepository = new LocalSpendingReviewRepository()
 
 const navigationItems = [
