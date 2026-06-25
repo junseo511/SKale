@@ -56,6 +56,105 @@ const stockAnalysisRequestSchema = z.object({
   userFeedback: z.string().trim().max(2_000).optional(),
 })
 
+const financialProfileSchema = z.object({
+  monthlySalary: z.number().nonnegative().nullable(),
+  essentialExpense: z.number().nonnegative().nullable(),
+  debtPayment: z.number().nonnegative().nullable(),
+  currentEmergencyFund: z.number().nonnegative().nullable(),
+  targetEmergencyFund: z.number().nonnegative().nullable(),
+  goalName: z.string().max(200),
+  goalMonthlyAmount: z.number().nonnegative().nullable(),
+  flexibleSpending: z.number().nonnegative().nullable(),
+  riskProfile: z.enum(['안정형', '균형형', '성장형']).nullable(),
+  investmentHorizon: z
+    .enum(['1년 미만', '1~3년', '3년 이상'])
+    .nullable(),
+  preferences: z.array(z.string().trim().min(1).max(300)).max(20),
+})
+
+const monthlySpendingSummarySchema = z.object({
+  id: z.string(),
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+  source: z.enum(['text', 'image', 'mixed']),
+  totalExpense: z.number().nonnegative().nullable(),
+  essentialExpense: z.number().nonnegative().nullable(),
+  flexibleExpense: z.number().nonnegative().nullable(),
+  notableCategories: z.array(z.string().trim().min(1)).max(8),
+  insight: z.string(),
+  needReview: z.boolean(),
+})
+
+const paydayConversationModelResponseValidationSchema = z
+  .object({
+    reply: z.string().min(1),
+    profilePatch: z
+      .object({
+        monthlySalary: z.number().nonnegative().nullable(),
+        essentialExpense: z.number().nonnegative().nullable(),
+        debtPayment: z.number().nonnegative().nullable(),
+        currentEmergencyFund: z.number().nonnegative().nullable(),
+        targetEmergencyFund: z.number().nonnegative().nullable(),
+        goalName: z.string().max(200).nullable(),
+        goalMonthlyAmount: z.number().nonnegative().nullable(),
+        flexibleSpending: z.number().nonnegative().nullable(),
+        riskProfile: z
+          .enum(['안정형', '균형형', '성장형'])
+          .nullable(),
+        investmentHorizon: z
+          .enum(['1년 미만', '1~3년', '3년 이상'])
+          .nullable(),
+        preferences: z
+          .array(z.string().trim().min(1).max(300))
+          .max(8)
+          .nullable(),
+      })
+      .strict(),
+    monthlySpendingProposal: z
+      .object({
+        month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+        source: z.enum(['text', 'image', 'mixed']),
+        totalExpense: z.number().nonnegative().nullable(),
+        essentialExpense: z.number().nonnegative().nullable(),
+        flexibleExpense: z.number().nonnegative().nullable(),
+        notableCategories: z.array(z.string().trim().min(1)).max(8),
+        insight: z.string(),
+        needReview: z.boolean(),
+      })
+      .strict()
+      .nullable(),
+    missingData: z.array(z.string().trim().min(1)).max(8),
+    appliedFacts: z.array(z.string().trim().min(1)).max(10),
+  })
+  .strict()
+
+const paydayConversationRequestSchema = z
+  .object({
+    message: z.string().trim().max(10_000),
+    targetMonth: z
+      .string()
+      .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+      .optional(),
+    attachments: z
+      .array(imageAttachmentSchema)
+      .max(MAX_IMAGE_COUNT)
+      .default([]),
+    profile: financialProfileSchema,
+    monthlySpending: z.array(monthlySpendingSummarySchema).max(24),
+    recentMessages: z
+      .array(
+        z.object({
+          role: z.enum(['agent', 'user']),
+          content: z.string().max(5_000),
+        }),
+      )
+      .max(12),
+  })
+  .refine(
+    (request) =>
+      request.message.length > 0 || request.attachments.length > 0,
+    { message: '대화 내용 또는 사용내역 이미지가 필요합니다.' },
+  )
+
 const spendingAnalysisSchema = {
   type: 'object',
   additionalProperties: false,
@@ -213,6 +312,105 @@ const stockAnalysisSchema = {
   required: ['companyName', 'ticker', 'verdict', 'scoreBreakdown', 'oneSentenceThesis', 'strengths', 'weaknesses', 'fatalFlags', 'missingData', 'assumptions', 'questionsToCheck', 'monitoringMetrics', 'nextAction', 'disclaimer'],
 } as const
 
+const paydayConversationResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    reply: { type: 'string' },
+    profilePatch: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        monthlySalary: { type: ['number', 'null'], minimum: 0 },
+        essentialExpense: { type: ['number', 'null'], minimum: 0 },
+        debtPayment: { type: ['number', 'null'], minimum: 0 },
+        currentEmergencyFund: { type: ['number', 'null'], minimum: 0 },
+        targetEmergencyFund: { type: ['number', 'null'], minimum: 0 },
+        goalName: { type: ['string', 'null'] },
+        goalMonthlyAmount: { type: ['number', 'null'], minimum: 0 },
+        flexibleSpending: { type: ['number', 'null'], minimum: 0 },
+        riskProfile: {
+          type: ['string', 'null'],
+          enum: ['안정형', '균형형', '성장형', null],
+        },
+        investmentHorizon: {
+          type: ['string', 'null'],
+          enum: ['1년 미만', '1~3년', '3년 이상', null],
+        },
+        preferences: {
+          type: ['array', 'null'],
+          items: { type: 'string' },
+          maxItems: 8,
+        },
+      },
+      required: [
+        'monthlySalary',
+        'essentialExpense',
+        'debtPayment',
+        'currentEmergencyFund',
+        'targetEmergencyFund',
+        'goalName',
+        'goalMonthlyAmount',
+        'flexibleSpending',
+        'riskProfile',
+        'investmentHorizon',
+        'preferences',
+      ],
+    },
+    monthlySpendingProposal: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      properties: {
+        month: {
+          type: 'string',
+          pattern: '^\\d{4}-(0[1-9]|1[0-2])$',
+        },
+        source: {
+          type: 'string',
+          enum: ['text', 'image', 'mixed'],
+        },
+        totalExpense: { type: ['number', 'null'], minimum: 0 },
+        essentialExpense: { type: ['number', 'null'], minimum: 0 },
+        flexibleExpense: { type: ['number', 'null'], minimum: 0 },
+        notableCategories: {
+          type: 'array',
+          items: { type: 'string' },
+          maxItems: 8,
+        },
+        insight: { type: 'string' },
+        needReview: { type: 'boolean' },
+      },
+      required: [
+        'month',
+        'source',
+        'totalExpense',
+        'essentialExpense',
+        'flexibleExpense',
+        'notableCategories',
+        'insight',
+        'needReview',
+      ],
+    },
+    missingData: {
+      type: 'array',
+      items: { type: 'string' },
+      maxItems: 8,
+    },
+    appliedFacts: {
+      type: 'array',
+      items: { type: 'string' },
+      maxItems: 10,
+    },
+  },
+  required: [
+    'reply',
+    'profilePatch',
+    'monthlySpendingProposal',
+    'missingData',
+    'appliedFacts',
+  ],
+} as const
+
 type SpendingOutput = {
   proposals: Array<{
     rawText: string
@@ -245,6 +443,117 @@ app.get('/api/health', (_request: Request, response: Response) => {
   })
 })
 
+app.post('/api/payday/chat', async (request, response, next) => {
+  try {
+    const parsedRequest = paydayConversationRequestSchema.safeParse(
+      request.body,
+    )
+    if (!parsedRequest.success) {
+      response.status(400).json({
+        message:
+          parsedRequest.error.issues[0]?.message ??
+          '월급 Agent 요청 형식이 올바르지 않습니다.',
+      })
+      return
+    }
+
+    validateImageSizes(parsedRequest.data.attachments)
+    const {
+      message,
+      targetMonth,
+      attachments,
+      profile,
+      monthlySpending,
+      recentMessages,
+    } = parsedRequest.data
+    if (
+      attachments.length === 0 &&
+      isClearlyOutsidePaydayScope(message)
+    ) {
+      response.json({
+        reply:
+          '잘 모르겠어요. 월급, 소비, 저축, 목표 또는 투자 계획에 관해 말씀해 주세요.',
+        profilePatch: {},
+        monthlySpendingProposal: undefined,
+        missingData: [],
+        appliedFacts: [],
+      })
+      return
+    }
+
+    const { client, model } = createModelClient()
+    const modelResponse = await client.models.generateContent({
+      model,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: [
+                `Current financial profile:\n${JSON.stringify(profile)}`,
+                `\nConfirmed monthly spending summaries:\n${JSON.stringify(monthlySpending)}`,
+                `\nRecent conversation:\n${JSON.stringify(recentMessages)}`,
+                `\nCurrent user message:\n${message || '(no text)'}`,
+                `\nTarget month for the submitted spending data:\n${targetMonth ?? '(not specified)'}`,
+              ].join(''),
+            },
+            ...attachments.map((attachment) => ({
+              inlineData: {
+                mimeType: attachment.mimeType,
+                data: attachment.data,
+              },
+            })),
+          ],
+        },
+      ],
+      config: {
+        systemInstruction: [
+          'You are SKale, a conversational payday planning agent.',
+          'The user may write in Korean or English. Always write every user-facing natural-language field in Korean, including reply, insight, missingData, appliedFacts, preferences, and category descriptions.',
+          'Keep the Korean conversation concise and natural. Confirm one financial-profile item or preference at a time.',
+          'Only place facts that the user stated clearly or that are directly visible in the submitted data into profilePatch. Never infer or invent a value.',
+          'Return null for every profilePatch field that should not change.',
+          'Record only budget-relevant lifestyle preferences as short Korean sentences in preferences.',
+          'When the user submits prior-month spending data as text or images, create a monthly summary proposal using targetMonth.',
+          'If targetMonth is missing or any number in an image is unclear, set needReview to true and ask a concise clarification question in Korean.',
+          'Add only verifiable expense transactions. Exclude transfers, savings, investments, refunds, and income from expense totals.',
+          'Treat rent, maintenance fees, telecommunications, insurance, and recurring transportation needed for daily life as essential expenses.',
+          'Create monthlySpendingProposal only when the current message or attachments actually contain prior spending data. Otherwise return null.',
+          'Do not overwrite an already confirmed profile value unless the user clearly asks to change it.',
+          'The application code calculates salary allocation and investable cash. Do not claim that you finalized those amounts.',
+          'After addressing the user request, ask about at most one most important missing financial item.',
+          'Do not give instructions to buy, sell, or hold a specific financial product.',
+          'If the message is unrelated to salary, spending, saving, debt, financial goals, or investment planning, or if its meaning cannot be understood with reasonable confidence, do not guess.',
+          'For an unrelated, nonsensical, or unintelligible message, reply in Korean that you do not understand and ask the user to discuss salary, spending, saving, goals, or investment planning. Return null for every profilePatch field, return null for monthlySpendingProposal, and return empty arrays for missingData and appliedFacts.',
+        ].join('\n'),
+        responseMimeType: 'application/json',
+        responseJsonSchema: paydayConversationResponseSchema,
+        temperature: 0.2,
+        maxOutputTokens: 4_000,
+      },
+    })
+    const modelJson = parseModelJson<unknown>(modelResponse.text)
+    const result =
+      paydayConversationModelResponseValidationSchema.parse(modelJson)
+    const profilePatch = Object.fromEntries(
+      Object.entries(result.profilePatch).filter(
+        ([key, value]) =>
+          value !== null &&
+          !(key === 'preferences' && Array.isArray(value) && value.length === 0),
+      ),
+    )
+
+    response.json({
+      ...result,
+      profilePatch,
+      monthlySpendingProposal:
+        result.monthlySpendingProposal ?? undefined,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.post('/api/spending/analyze', async (request, response, next) => {
   try {
     const parsedRequest = spendingAnalysisRequestSchema.safeParse(request.body)
@@ -262,9 +571,11 @@ app.post('/api/spending/analyze', async (request, response, next) => {
         parts: [
           {
             text: [
-              `텍스트 소비 내역:\n${input || '(없음)'}`,
-              userFeedback ? `\n사용자 수정 요청:\n${userFeedback}` : '',
-              '\n첨부 이미지와 텍스트에 같은 거래가 반복되면 반드시 한 건만 반환하라.',
+              `Text spending records:\n${input || '(none)'}`,
+              userFeedback
+                ? `\nUser correction request:\n${userFeedback}`
+                : '',
+              '\nIf the same transaction appears in both an attachment and the text, return it only once.',
             ].join(''),
           },
           ...images.map((image) => ({
@@ -278,14 +589,16 @@ app.post('/api/spending/analyze', async (request, response, next) => {
       contents,
       config: {
         systemInstruction: [
-          '너는 개인 자산관리 Agent SKale의 소비 분석 역할이다.',
-          '사용자가 제공한 텍스트와 이미지에서 확인되는 거래만 추출하고 숫자나 날짜를 지어내지 않는다.',
-          '같은 날짜, 같은 금액, 같거나 유사한 사용처의 거래는 입력 출처가 달라도 중복으로 간주해 한 번만 반환한다.',
-          '이미지 OCR이 불확실하면 confidence를 낮추고 reason에 확인할 내용을 적는다.',
-          '투자, 저축, 이체, 수입은 일반 소비로 분류하지 않는다.',
-          `현재 날짜는 ${new Date().toISOString().slice(0, 10)}이다. 연도가 없는 날짜는 현재 연도로 해석한다.`,
-          '각 reason에는 분류 근거를 반드시 한 문장 이상 작성한다.',
-          '판단은 제안이며 사용자가 최종 검토한다.',
+          'You are the spending-analysis component of the personal finance agent SKale.',
+          'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
+          'Extract only transactions directly supported by the submitted text and images. Never invent a number or date.',
+          'Treat transactions with the same date, amount, and identical or similar merchant as duplicates even when they come from different input sources. Return each transaction once.',
+          'If image OCR is uncertain, lower confidence and explain what the user should verify in Korean in reason.',
+          'Do not classify investments, savings, transfers, refunds, or income as ordinary expenses.',
+          `The current date is ${new Date().toISOString().slice(0, 10)}. Interpret a date without a year as belonging to the current year.`,
+          'Write at least one Korean sentence explaining each classification in reason.',
+          'The result is a proposal that requires user review.',
+          'If the submitted content is unrelated, nonsensical, or contains no recognizable transaction, return an empty proposals array and explain in Korean that the spending data could not be understood.',
         ].join('\n'),
         responseMimeType: 'application/json',
         responseJsonSchema: spendingAnalysisSchema,
@@ -335,26 +648,30 @@ app.post('/api/assets/analyze', async (request, response, next) => {
     const modelResponse = await client.models.generateContent({
       model,
       contents: [
-        `자산 현황:\n${input}`,
-        userFeedback ? `\n사용자 수정 요청:\n${userFeedback}` : '',
+        `Financial and asset information:\n${input}`,
+        userFeedback
+          ? `\nUser correction request:\n${userFeedback}`
+          : '',
       ].join(''),
       config: {
         systemInstruction: [
-          '너는 개인 자산관리 Agent SKale의 자산 분석 역할이다.',
-          '사용자가 제공한 항목과 금액만 사용하고 숫자를 지어내지 않는다.',
-          '사용자는 월급, 월급일, 자산, 부채, 필수 지출, 목적 자금을 한 입력에 자연스럽게 섞어 쓸 수 있다.',
-          '월급·상여 등 정기적으로 들어오는 돈은 반복 수입이며 보유 자산에 합산하지 않는다.',
-          '월세·통신비·보험료 등 정기적으로 나가는 돈은 필수 지출이며 부채나 자산에 합산하지 않는다.',
-          '입금되어 현재 계좌에 남아 있는 돈만 현금성 자산이다.',
-          '각 금액 항목을 반복 수입, 필수 지출, 현금성 자산, 저축성 자산, 투자 자산, 목적 자금, 부채/미결제, 기타 중 하나로 분류한다.',
-          '월급일은 payday에 기록하고 금액 proposal로 만들지 않는다.',
-          '반복 수입이 있으면 월급 전체를 필수 생활비, 부채/카드 결제, 비상금, 목적 자금, 저축, 투자, 여유 자금으로 배분한다.',
-          '배분 금액 합계는 반복 수입 합계와 정확히 같아야 한다.',
-          '부채·카드 미결제와 필수 지출을 먼저 반영하고 비상금이 부족하면 투자보다 비상금을 우선한다.',
-          '반복 수입이 없으면 salaryAllocations는 빈 배열로 반환하고 월급 정보를 missingData에 넣는다.',
-          '소득, 월 생활비, 고정비가 부족하면 투자 가능 금액을 단정하지 않고 missingData에 넣는다.',
-          '총자산, 총부채, 순자산 합계는 응답에서 직접 계산하거나 숫자로 단정하지 않는다. 합산은 애플리케이션 코드가 수행한다.',
-          '불확실한 항목은 confidence를 낮추며 사용자가 최종 검토한다.',
+          'You are the asset-analysis component of the personal finance agent SKale.',
+          'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
+          'Use only items and amounts explicitly provided by the user. Never invent a number.',
+          'The user may mix salary, payday, assets, debt, essential expenses, and goal funds in one natural-language message.',
+          'Recurring inflows such as salary and bonuses are recurring income and must not be included in owned assets.',
+          'Recurring outflows such as rent, telecommunications, and insurance are essential expenses and must not be included in assets or debt.',
+          'Only money already deposited and currently remaining in an account is a liquid asset.',
+          'Classify each monetary item into one of the Korean enum values defined by the response schema.',
+          'Store payday in payday and do not create a monetary proposal for it.',
+          'When recurring income exists, allocate the entire recurring-income total across the Korean salary allocation categories defined by the schema.',
+          'The allocation total must equal the recurring-income total exactly.',
+          'Prioritize debt, outstanding card payments, and essential expenses. Prioritize an emergency fund over investment when the emergency fund is insufficient.',
+          'When recurring income is absent, return an empty salaryAllocations array and mention the missing salary information in Korean in missingData.',
+          'When income, monthly living costs, or fixed costs are insufficient, do not assert an investable amount; list the missing information in Korean.',
+          'Do not calculate or assert total assets, total debt, or net worth in the model response. Application code performs those calculations.',
+          'Lower confidence for uncertain items. The user must review the proposal.',
+          'If the message is unrelated, nonsensical, or cannot be interpreted as financial information, return no proposals, explain in Korean that it could not be understood, and do not invent missing values.',
         ].join('\n'),
         responseMimeType: 'application/json',
         responseJsonSchema: assetAnalysisSchema,
@@ -413,12 +730,14 @@ app.post('/api/portfolio/analyze', async (request, response, next) => {
       contents: JSON.stringify(parsedRequest.data),
       config: {
         systemInstruction: [
-          '너는 개인 자산관리 Agent SKale의 포트폴리오 분석 역할이다.',
-          '비상금, 부채, 카드 미결제, 단기 목적 자금을 투자보다 먼저 고려한다.',
-          '매수·매도 지시를 하지 않고 자산군 배분 방향만 제안한다.',
-          '사용자가 제공하지 않은 수치나 현재 시장 데이터를 지어내지 않는다.',
-          '배분 비율의 합은 정확히 100이 되게 한다.',
-          '결과는 참고용이며 사용자가 수정·수락·거절할 수 있는 제안이다.',
+          'You are the portfolio-analysis component of the personal finance agent SKale.',
+          'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
+          'Consider emergency funds, debt, outstanding card payments, and short-term goal funds before investment.',
+          'Do not give buy or sell instructions. Propose only asset-class allocation directions.',
+          'Never invent a number or current market fact that the user did not provide.',
+          'Make the allocation percentages total exactly 100.',
+          'The result is a reference proposal that the user may edit, accept, or reject.',
+          'If the input is unrelated, nonsensical, or insufficient to discuss a portfolio, state in Korean that it cannot be determined and list the necessary missing information instead of guessing.',
         ].join('\n'),
         responseMimeType: 'application/json',
         responseJsonSchema: portfolioAnalysisSchema,
@@ -453,15 +772,17 @@ app.post('/api/stocks/analyze', async (request, response, next) => {
       contents: JSON.stringify(parsedRequest.data),
       config: {
         systemInstruction: [
-          '너는 개인 자산관리 Agent SKale의 종목 검토 역할이다.',
-          '오직 사용자가 제공한 정보만 사용하며 최신 실적, 주가, 밸류에이션을 검색하거나 추정하지 않는다.',
-          '평가 배점은 산업 구조 25, 경쟁우위 20, 재무제표 25, 밸류에이션 15, 경영진/자본배분 10, 리스크 관리 5이다.',
-          '평가할 근거가 부족한 영역은 점수를 null로 반환하고 verdict를 데이터 부족 또는 보류로 판단한다.',
-          '재무 데이터가 거의 없으면 전체 영역에 억지 점수를 주지 않는다.',
-          '영업현금흐름 지속 악화, 재고·매출채권 급증, 감당하기 어려운 부채, 반복 희석, 단순 하청, 과열 밸류에이션은 fatalFlags에 넣는다.',
-          '매수, 매도, 보유를 지시하지 않는다.',
-          '점수는 전략 적합도이며 사용자가 수락하거나 거절할 분석 초안이다.',
-          'disclaimer에는 제공 데이터 기반 참고용 분석이며 실제 투자 판단은 사용자 책임임을 명시한다.',
+          'You are the stock-review component of the personal finance agent SKale.',
+          'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
+          'Use only information provided by the user. Do not search for or infer current earnings, stock prices, or valuation data.',
+          'Use these maximum scores: industry structure 25, competitive advantage 20, financial quality 25, valuation 15, management and capital allocation 10, and risk control 5.',
+          'Return null for any score without sufficient evidence, and use the Korean verdict meaning insufficient data or hold when appropriate.',
+          'Do not force scores across all areas when financial data is sparse.',
+          'Include persistently deteriorating operating cash flow, sharp inventory or receivables growth, unaffordable debt, repeated dilution, commodity subcontracting, and overheated valuation in fatalFlags when supported by the submitted data.',
+          'Do not instruct the user to buy, sell, or hold.',
+          'The score represents strategy fit and is a draft that the user may accept or reject.',
+          'Write a Korean disclaimer stating that the analysis uses only submitted data and that the user is responsible for investment decisions.',
+          'If the input is unrelated, nonsensical, or provides no usable company information, use the Korean verdict for insufficient data and state in Korean that the request could not be understood without guessing.',
         ].join('\n'),
         responseMimeType: 'application/json',
         responseJsonSchema: stockAnalysisSchema,
@@ -495,7 +816,12 @@ app.use((error: unknown, _request: Request, response: Response, _next: NextFunct
     return
   }
   if (status === 401 || status === 403) {
-    response.status(401).json({ message: 'AI API 키가 유효하지 않거나 권한이 없습니다. 서버 환경변수를 확인해 주세요.' })
+    response.status(status).json({
+      message:
+        error instanceof Error
+          ? error.message
+          : 'AI API 설정과 권한을 확인해 주세요.',
+    })
     return
   }
   if (status && status >= 400 && status < 500) {
@@ -605,4 +931,123 @@ function getErrorStatus(error: unknown): number | undefined {
     return error.status
   }
   return undefined
+}
+
+function isClearlyOutsidePaydayScope(message: string): boolean {
+  const normalizedMessage = message.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (!normalizedMessage) {
+    return false
+  }
+
+  const meaningfulCharacters = normalizedMessage.replace(
+    /[ㅋㅎㅠㅜㅡ!?.,~\s]/g,
+    '',
+  )
+  if (meaningfulCharacters.length < 2) {
+    return true
+  }
+
+  const clearlyUnrelatedTerms = [
+    '날씨',
+    '기온',
+    '코딩해',
+    '코드 짜',
+    '프로그래밍 문제',
+    '번역해',
+    '역사 알려',
+    '수도가 어디',
+    '대통령 누구',
+    '요리법',
+    '레시피',
+    '축구 결과',
+    '축구 순위',
+    '야구 결과',
+    '야구 순위',
+    '게임 공략',
+    '소설 써',
+    '시 써',
+    '숙제 풀어',
+    'weather forecast',
+    'write code',
+    'programming problem',
+    'translate this',
+    'recipe',
+    'football score',
+    'baseball score',
+  ]
+
+  if (
+    clearlyUnrelatedTerms.some((term) =>
+      normalizedMessage.includes(term),
+    )
+  ) {
+    return true
+  }
+
+  const relevantTerms = [
+    '월급',
+    '급여',
+    '소득',
+    '수입',
+    '지출',
+    '소비',
+    '생활비',
+    '고정비',
+    '월세',
+    '관리비',
+    '통신비',
+    '보험',
+    '카드',
+    '대출',
+    '부채',
+    '빚',
+    '비상금',
+    '저축',
+    '적금',
+    '예금',
+    '투자',
+    '주식',
+    '채권',
+    'etf',
+    '포트폴리오',
+    '목표',
+    '예산',
+    '돈',
+    '금액',
+    '만원',
+    '여행',
+    '외식',
+    '카페',
+    '커피',
+    '음식',
+    '배달',
+    '술',
+    '쇼핑',
+    '취미',
+    '게임',
+    '운동',
+    '데이트',
+    '영화',
+    '공연',
+    '문화',
+    '교통',
+    'salary',
+    'income',
+    'expense',
+    'spending',
+    'budget',
+    'saving',
+    'investment',
+    'debt',
+    'loan',
+    'money',
+    'portfolio',
+    'goal',
+  ]
+
+  if (relevantTerms.some((term) => normalizedMessage.includes(term))) {
+    return false
+  }
+
+  return false
 }
