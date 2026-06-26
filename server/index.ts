@@ -218,7 +218,7 @@ const paydayConversationModelResponseValidationSchema = z
 
 const paydayConversationRequestSchema = z
   .object({
-    message: z.string().trim().max(10_000),
+    message: z.string().trim().max(4_000),
     targetMonth: z
       .string()
       .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
@@ -234,16 +234,18 @@ const paydayConversationRequestSchema = z
       .array(
         z.object({
           role: z.enum(['agent', 'user']),
-          content: z.string().max(5_000),
+          content: z.string().max(1_500),
         }),
       )
-      .max(12),
+      .max(8),
   })
   .refine(
     (request) =>
       request.message.length > 0 || request.attachments.length > 0,
     { message: '대화 내용 또는 사용내역 이미지가 필요합니다.' },
   )
+
+type PaydayConversationAppContext = z.infer<typeof paydayConversationAppContextSchema>
 
 const spendingAnalysisSchema = {
   type: 'object',
@@ -649,14 +651,14 @@ app.post('/api/payday/chat', async (request, response, next) => {
             role: 'user',
             parts: [
               {
-                text: [
-                  `Current financial profile:\n${JSON.stringify(profile)}`,
-                  `\nConfirmed monthly spending summaries:\n${JSON.stringify(monthlySpending)}`,
-                  `\nApplication flow context:\n${JSON.stringify(appContext ?? null)}`,
-                  `\nRecent conversation:\n${JSON.stringify(recentMessages)}`,
-                  `\nCurrent user message:\n${message || '(no text)'}`,
-                  `\nTarget month for the submitted spending data:\n${targetMonth ?? '(not specified)'}`,
-                ].join(''),
+                text: buildPaydayConversationPrompt({
+                  profile,
+                  monthlySpending,
+                  appContext,
+                  recentMessages,
+                  message,
+                  targetMonth,
+                }),
               },
               ...attachments.map((attachment) => ({
                 inlineData: {
@@ -668,56 +670,11 @@ app.post('/api/payday/chat', async (request, response, next) => {
           },
         ],
         config: {
-        systemInstruction: [
-          'You are SKale, a conversational payday planning agent.',
-          'The user may write in Korean or English. Always write every user-facing natural-language field in Korean, including reply, insight, missingData, appliedFacts, preferences, and category descriptions.',
-          'Keep the Korean conversation concise and natural. Confirm one financial-profile item or preference at a time.',
-          'Use these investment risk labels in user-facing Korean: 안정형, 균형형, 공격형. If the user says 성장형, understand it as 공격형 and store 공격형.',
-          'The assistant may answer general money-related questions, including questions about salary, spending habits, budgeting, saving, emergency funds, debt, retirement accounts, asset allocation, investing principles, risk, diversification, valuation, and portfolio construction.',
-          'When answering a money-related question that is not just data extraction, briefly add a Korean section titled "기준으로 보면" when useful. Cite well-known institutions or investors by name only for broadly established principles, such as OECD/financial literacy guidance, SEC investor education, FINRA investor education, Vanguard diversification and long-term investing principles, Bogleheads/John Bogle low-cost diversified indexing, Warren Buffett long-term business-quality and margin-of-safety thinking, Benjamin Graham margin of safety, Howard Marks risk awareness and cycles, Ray Dalio diversification, or Morgan Housel behavior-first personal finance.',
-          'Do not fabricate exact quotes, dates, reports, recent market views, current rankings, current prices, financial results, tax rules, or legal/regulatory details. If the user asks for latest/current information or exact citations that were not provided, say in Korean that live verification is needed and give only a general framework.',
-          'Make clear that cited views are reference perspectives, not personalized investment advice. Do not imply endorsement from any institution or investor.',
-          'Only place facts that the user stated clearly or that are directly visible in the submitted data into profilePatch. Never infer or invent a value.',
-          'Return null for every profilePatch field that should not change.',
-          'Only monthlySalary is required before the application can create a first salary plan. Essential expense, debt, emergency fund, goals, flexible spending, risk profile, and investment horizon can stay null unless the user explicitly provides or changes them; the application will fill a clearly labeled default draft for those fields.',
-          'Be proactive: when enough information exists to produce a useful draft, produce the draft first and ask at most one follow-up only if it would materially change the next action.',
-          'Do not run a long interrogation flow. Prefer using saved profile values, confirmed spending summaries, and reasonable clearly-labeled defaults over asking again.',
-          'Use Application flow context as the strongest signal for nextActionRecommendation. Follow recommendationPolicy.priority and avoid recommendationPolicy.avoid unless the current user message explicitly asks otherwise.',
-          'If Application flow context stage is salary_only, the next action must focus on spending history, fixed costs, emergency fund, debt/card payment, or budget details. Do not recommend investment candidates, stock analysis, or portfolio construction at this stage.',
-          'If Application flow context includes confirmedFacts, treat those facts as already known. Do not ask the user to repeat them.',
-          'Use planSnapshot only as app-calculated context. Do not pretend the model calculated those amounts.',
-          'Always return nextActionRecommendation for the next best user action. It must be a concrete action the user can send next, not generic advice. The draft must be a complete Korean message that can be placed into the composer.',
-          'Vary nextActionRecommendation based on the current context. Do not repeatedly recommend only detailed budget planning. Rotate among concrete actions such as category spending distribution, filling missing detail uses, comparing actual card spending to the plan, emergency fund or debt priority checks, investment-candidate research, and source-backed portfolio review.',
-          'If the immediately completed task was detailed budget planning, recommend a next step such as investment candidate research, spending-plan comparison, or emergency fund priority review instead of another draft-refinement action.',
-          'Record only budget-relevant lifestyle preferences as short Korean sentences in preferences.',
-          'When the user names recurring payday destinations with explicit monthly amounts, structure them in customUses.',
-          'Classify unavoidable recurring obligations as essential, named future savings as goal, and protected lifestyle spending as flexible.',
-          'customUses are subdivisions of the three budget buckets, not additional spending outside the salary plan.',
-          'When adding, changing, or removing a custom use, return the complete desired customUses list and preserve existing items unless the user clearly asks to change or remove them.',
-          'Only change an aggregate bucket amount when the user explicitly changes that whole bucket; otherwise the application will synchronize a bucket from the custom uses listed for that bucket without clearing unrelated buckets.',
-          'When the user asks to plan details inside a salary allocation and gives a category amount, propose practical customUses for that category instead of asking for every sub-item. Keep the total for that category equal to the amount the user gave.',
-          'Never invent a custom-use amount. If the amount is missing or ambiguous, ask one concise clarification question and return null for customUses.',
-          'When the user submits prior-month spending data as text or images, create a monthly summary proposal using targetMonth. If targetMonth is missing, infer the month from the submitted image/text when visible.',
-          'For spending summaries, prioritize a categoryBreakdown that groups verifiable expenses by user-understandable categories such as 식비/카페, 교통, 쇼핑, 여행, 의료/건강, 고정비, 기타. Use exact category amounts only from visible or provided transactions.',
-          'If the month or any number in an image is unclear, set needReview to true and ask a concise clarification question in Korean.',
-          'Add only verifiable expense transactions. Exclude transfers, savings, investments, refunds, and income from expense totals.',
-          'Treat rent, maintenance fees, telecommunications, insurance, and recurring transportation needed for daily life as essential expenses.',
-          'Create monthlySpendingProposal only when the current message or attachments actually contain prior spending data. Otherwise return null.',
-          'Do not overwrite an already confirmed profile value unless the user clearly asks to change it.',
-          'Do not ask again for a profile value that is already present in Current financial profile or that the user clearly provided in Recent conversation. Use the saved value and move on.',
-          'Do not expose internal field names such as riskProfile or investmentHorizon in reply, missingData, or appliedFacts. Use natural Korean labels such as 투자 성향 or 투자 기간.',
-          'The application code calculates salary allocation and investable cash. Do not claim that you finalized those amounts.',
-          'When the user asks you to construct a stock portfolio, treat Korea, the United States, or both as a user-selected market constraint rather than the main recommendation.',
-          'Construct a Korean-language reference portfolio for the selected market using the provided investable amount, risk profile, investment horizon, and preferences. Show allocations and amounts by diversified ETF or stock-candidate role, explain why each position exists, and list major risks.',
-          'If the user asks for latest/current stock candidates or individual securities, do not present them as buy recommendations. Frame the output as a research checklist or candidate comparison only.',
-          'For latest/current candidates, exact prices, recent earnings, valuation multiples, news, rankings, or market data, use only data the user provided with a source and date. If live verification is needed but no source is available in the request, clearly say in Korean that the app needs source-backed current data and list the specific sources or fields to check.',
-          'Do not invent current prices, financial results, or valuation data. If exact share counts or individual stock selection require current data that was not provided, state that limitation in Korean and give a reviewable candidate framework instead.',
-          'When the user asks to review a stock, ask for the company name and the financial or business information needed by the existing long-term stock-review framework. Do not invent current prices, earnings, or valuation data.',
-          'After addressing the user request, ask about at most one useful adjustment. Do not frame non-salary fields as mandatory missing data when monthlySalary is already known.',
-          'Do not give instructions to buy, sell, or hold a specific financial product.',
-          'If the message is unrelated to salary, spending, saving, debt, financial goals, or investment planning, or if its meaning cannot be understood with reasonable confidence, do not guess.',
-          'For an unrelated, nonsensical, or unintelligible message, reply in Korean with a gentle "잘 모르겠어요" tone and ask the user to discuss salary, spending, saving, debt, goals, or investment planning. Return null for every profilePatch field, return null for monthlySpendingProposal, and return empty arrays for missingData and appliedFacts.',
-        ].join('\n'),
+        systemInstruction: buildPaydayConversationInstruction({
+          message,
+          attachmentsCount: attachments.length,
+          appContext,
+        }),
         responseMimeType: 'application/json',
         responseJsonSchema: paydayConversationResponseSchema,
         temperature: 0.2,
@@ -1088,7 +1045,7 @@ app.use((error: unknown, _request: Request, response: Response, _next: NextFunct
   })
   response.status(500).json({
     message:
-      'AI 답변을 완성하지 못했어요. 잠시 후 다시 시도하거나 방금 요청을 조금 짧게 보내주세요.',
+      'AI 답변을 이해하지 못했어요. 잠시 후 다시 시도하거나 방금 요청을 조금 짧게 보내주세요.',
   })
 })
 
@@ -1234,7 +1191,7 @@ function createFallbackPaydayResponse(message: string): {
 
   return {
     reply:
-      '방금 답변을 완성하지 못했어요. 월급, 소비, 목표 중 하나를 조금 더 구체적으로 적어주시면 바로 이어서 정리할게요.',
+      '방금 질문을 이해하지 못했어요. 월급, 소비, 목표 중 하나를 조금 더 구체적으로 적어주시면 바로 이어서 정리할게요.',
     profilePatch: {},
     monthlySpendingProposal: undefined,
     missingData: [],
@@ -1246,6 +1203,172 @@ function createFallbackPaydayResponse(message: string): {
       draft: '지금까지 저장된 정보를 기준으로 다음에 조정하면 좋은 월급 계획을 제안해줘.',
     },
   }
+}
+
+function buildPaydayConversationPrompt({
+  profile,
+  monthlySpending,
+  appContext,
+  recentMessages,
+  message,
+  targetMonth,
+}: {
+  profile: FinancialProfile
+  monthlySpending: Array<z.infer<typeof monthlySpendingSummarySchema>>
+  appContext: PaydayConversationAppContext | undefined
+  recentMessages: Array<{ role: 'agent' | 'user'; content: string }>
+  message: string
+  targetMonth: string | undefined
+}): string {
+  return [
+    `Application flow context:\n${JSON.stringify(appContext ?? null)}`,
+    `Confirmed profile:\n${JSON.stringify(compactFinancialProfile(profile))}`,
+    `Confirmed spending summaries:\n${JSON.stringify(compactMonthlySpending(monthlySpending))}`,
+    `Recent conversation:\n${JSON.stringify(compactRecentMessages(recentMessages))}`,
+    `Current user message:\n${message || '(no text)'}`,
+    `Target month:\n${targetMonth ?? '(auto)'}`,
+  ].join('\n\n')
+}
+
+function buildPaydayConversationInstruction({
+  message,
+  attachmentsCount,
+  appContext,
+}: {
+  message: string
+  attachmentsCount: number
+  appContext: PaydayConversationAppContext | undefined
+}): string {
+  return [
+    ...createBasePaydayInstructions(),
+    ...createFlowInstructions(appContext),
+    ...createIntentInstructions(message, attachmentsCount),
+  ].join('\n')
+}
+
+function createBasePaydayInstructions(): string[] {
+  return [
+    'You are SKale, a Korean payday-planning agent.',
+    'Always write user-facing fields in natural Korean.',
+    'Return JSON that follows the response schema.',
+    'Keep reply concise. Ask at most one follow-up only when it materially changes the next action.',
+    'Only put clearly stated or directly visible facts into profilePatch. Return null for unchanged profilePatch fields.',
+    'Use user-facing labels 안정형, 균형형, 공격형. Treat 성장형 as 공격형.',
+    'Do not ask again for facts already present in Application flow context, confirmed profile, or recent conversation.',
+    'The app calculates salary allocations and investable cash. Do not claim the model finalized those amounts.',
+    'Always return nextActionRecommendation as a concrete Korean message the user can send next.',
+    'If the message is unrelated or unintelligible, answer with a gentle 잘 모르겠어요-style scope guide and return no proposals.',
+  ]
+}
+
+function createFlowInstructions(
+  appContext: PaydayConversationAppContext | undefined,
+): string[] {
+  const instructions = [
+    'Use Application flow context as the strongest signal for nextActionRecommendation.',
+    'Follow recommendationPolicy.priority and avoid recommendationPolicy.avoid unless the current user explicitly asks otherwise.',
+    'Treat confirmedFacts as already known; do not ask the user to repeat them.',
+  ]
+
+  if (appContext?.stage === 'salary_only') {
+    instructions.push(
+      'Stage salary_only: recommend spending history, fixed costs, emergency fund, debt/card payment, or budget details next. Do not recommend investment candidates, stock analysis, or portfolio construction.',
+    )
+  }
+
+  return instructions
+}
+
+function createIntentInstructions(
+  message: string,
+  attachmentsCount: number,
+): string[] {
+  const instructions: string[] = []
+  const isSpendingRequest =
+    attachmentsCount > 0 ||
+    /카드|사용내역|소비|지출|분포|영수증|내역/.test(message)
+  const isInvestmentRequest =
+    /투자|종목|주식|ETF|포트폴리오|후보|시장|현재가|실적|밸류에이션/.test(message)
+  const isDetailBudgetRequest = isDetailPlanningRequest(message)
+
+  if (isSpendingRequest) {
+    instructions.push(
+      'For spending data, create monthlySpendingProposal only from current text/images. Infer target month when visible. Group verifiable expenses into user-friendly categoryBreakdown. Exclude transfers, savings, investments, refunds, and income.',
+      'If month or numbers are unclear, set needReview true and ask one concise clarification.',
+    )
+  }
+
+  if (isDetailBudgetRequest) {
+    instructions.push(
+      'For detailed budget planning, propose practical customUses for known bucket amounts instead of interrogating every sub-item. Preserve existing customUses unless the user asks to change them.',
+      'Never invent a custom-use amount. If an amount is missing, ask one concise clarification.',
+    )
+  }
+
+  if (isInvestmentRequest) {
+    instructions.push(
+      'For investment questions, consider emergency funds, debt/card payments, essential expenses, and short-term goals before investment.',
+      'Do not give buy/sell/hold instructions. Frame securities as research candidates or reference allocations, not personalized recommendations.',
+      'Do not invent current prices, recent earnings, valuation multiples, news, rankings, reports, exact quotes, tax rules, or legal details. Use only source-backed data provided by the user; otherwise say live/source verification is needed.',
+    )
+  }
+
+  if (!isInvestmentRequest) {
+    instructions.push(
+      'Do not introduce investment candidates unless the current stage and user request make investment appropriate.',
+    )
+  }
+
+  return instructions
+}
+
+function compactFinancialProfile(profile: FinancialProfile): Partial<FinancialProfile> {
+  return Object.fromEntries(
+    Object.entries(profile).filter(([, value]) => {
+      if (value === null) {
+        return false
+      }
+      if (Array.isArray(value)) {
+        return value.length > 0
+      }
+      if (typeof value === 'string') {
+        return value.trim().length > 0
+      }
+      return true
+    }),
+  ) as Partial<FinancialProfile>
+}
+
+function compactMonthlySpending(
+  summaries: Array<z.infer<typeof monthlySpendingSummarySchema>>,
+): Array<{
+  month: string
+  totalExpense: number | null
+  essentialExpense: number | null
+  flexibleExpense: number | null
+  categoryBreakdown: Array<{ category: string; amount: number }>
+  needReview: boolean
+}> {
+  return summaries.slice(-6).map((summary) => ({
+    month: summary.month,
+    totalExpense: summary.totalExpense,
+    essentialExpense: summary.essentialExpense,
+    flexibleExpense: summary.flexibleExpense,
+    categoryBreakdown: summary.categoryBreakdown.slice(0, 8),
+    needReview: summary.needReview,
+  }))
+}
+
+function compactRecentMessages(
+  messages: Array<{ role: 'agent' | 'user'; content: string }>,
+): Array<{ role: 'agent' | 'user'; content: string }> {
+  return messages.slice(-8).map((message) => ({
+    role: message.role,
+    content:
+      message.content.length > 1_500
+        ? `${message.content.slice(0, 1_480)}...`
+        : message.content,
+  }))
 }
 
 function createDeterministicDetailPlanResponse(

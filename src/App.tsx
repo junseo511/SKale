@@ -336,9 +336,9 @@ function App(): ReactNode {
             monthlySpending,
             hasSpendingHistory,
           }),
-          recentMessages: nextMessages.slice(-10).map((message) => ({
+          recentMessages: nextMessages.slice(-8).map((message) => ({
             role: message.role,
-            content: message.content,
+            content: compactConversationContent(message.content),
           })),
         },
         abortController.signal,
@@ -2770,6 +2770,16 @@ function createConversationAppContext({
     },
     recommendationPolicy: createRecommendationPolicy(stage),
   }
+}
+
+function compactConversationContent(content: string): string {
+  const normalizedContent = content.replace(/\s+/g, ' ').trim()
+  const maxLength = 1_500
+  if (normalizedContent.length <= maxLength) {
+    return normalizedContent
+  }
+
+  return `${normalizedContent.slice(0, maxLength - 20)}...`
 }
 
 function getConversationStage(
