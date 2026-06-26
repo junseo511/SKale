@@ -199,16 +199,16 @@ function App(): ReactNode {
     },
     {
       prompt:
-        '월급날 월세 70만원, 부모님 용돈 20만원, 운동비 10만원을 먼저 빼두고 싶어.',
+        '월급날 월세 60만원을 따로 빼두고 싶어.',
       icon: <WalletCards size={16} />,
     },
     {
-      prompt: '외식과 여행은 너무 줄이고 싶지 않은데, 다른 지출에서 균형을 맞춰줘.',
+      prompt: '외식과 여행은 줄이고 싶지 않은데, 다른 지출에서 균형을 맞춰줘.',
       icon: <MessageCircleMore size={16} />,
     },
     {
       prompt:
-        'SK하이닉스를 장기 투자 후보로 볼 때 무엇을 확인해야 하는지 체크리스트로 정리해줘.',
+        'SK하이닉스 주식 종목을 분석해줘.',
       icon: <TrendingUp size={16} />,
     },
   ]
@@ -565,7 +565,7 @@ function App(): ReactNode {
                       <Calculator size={16} />
                     </span>
                     <small>
-                      실수령액을 모르겠어. 연봉으로 계산해서 월급 계획을 시작할래.
+                      실수령액을 계산해줘.
                     </small>
                   </button>
                   {quickMessages.map((message) => (
@@ -581,7 +581,7 @@ function App(): ReactNode {
                   ))}
                   <div className="portfolio-suggestion-card">
                     <p>
-                      “이번 달 투자금으로 어떤 ETF와 종목 후보를 비교해볼까?”
+                      이번 달 투자금으로 포트폴리오를 구성해줘?
                     </p>
                     <div className="market-selector" aria-label="투자 시장 선택">
                       {(['한국', '미국', '한국·미국'] as PortfolioMarket[]).map(
