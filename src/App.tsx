@@ -591,7 +591,7 @@ function App(): ReactNode {
             {shouldShowQuickMessages && (
               <div className={`suggestion-section ${isStarterOpen ? 'open' : 'collapsed'}`}>
                 <div className="starter-heading">
-                  <span>이렇게도 시작해 보세요</span>
+                  <span>이렇게도 질문해 보세요</span>
                   <button
                     type="button"
                     aria-expanded={isStarterOpen}
