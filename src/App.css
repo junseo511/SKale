@@ -30,9 +30,9 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .panel-heading > div > div { display: flex; flex-direction: column; gap: 4px; }
 .panel-heading strong { font-size: 16px; }
 .panel-heading p { margin: 0; color: var(--muted); font-size: 12px; }
-.server-status-dot { width: 20px; height: 20px; flex: 0 0 auto; border-radius: 50%; background: radial-gradient(circle, #c91d2f 0 24%, rgba(201, 29, 47, .42) 42%, rgba(201, 29, 47, .12) 68%, rgba(201, 29, 47, 0) 100%); animation: breathe-status 2.8s ease-in-out infinite; transform-origin: center; }
-.server-status-dot.online { background: radial-gradient(circle, #168f5a 0 24%, rgba(22, 143, 90, .42) 42%, rgba(22, 143, 90, .12) 68%, rgba(22, 143, 90, 0) 100%); }
-.server-status-dot.checking { background: radial-gradient(circle, #e78317 0 24%, rgba(231, 131, 23, .42) 42%, rgba(231, 131, 23, .12) 68%, rgba(231, 131, 23, 0) 100%); animation-duration: 1.6s; }
+.server-status-dot { width: 20px; height: 20px; flex: 0 0 auto; border-radius: 50%; background: radial-gradient(circle, #c91d2f 0 16%, rgba(201, 29, 47, .42) 34%, rgba(201, 29, 47, .12) 66%, rgba(201, 29, 47, 0) 100%); animation: breathe-status 2.8s ease-in-out infinite; transform-origin: center; }
+.server-status-dot.online { background: radial-gradient(circle, #168f5a 0 16%, rgba(22, 143, 90, .42) 34%, rgba(22, 143, 90, .12) 66%, rgba(22, 143, 90, 0) 100%); }
+.server-status-dot.checking { background: radial-gradient(circle, #e78317 0 16%, rgba(231, 131, 23, .42) 34%, rgba(231, 131, 23, .12) 66%, rgba(231, 131, 23, 0) 100%); animation-duration: 1.6s; }
 
 .message-list { display: flex; overflow-y: auto; min-height: 310px; max-height: 560px; padding: 22px; background: #fcfafa; flex-direction: column; gap: 16px; }
 .message-row { display: flex; align-items: flex-start; gap: 9px; }
