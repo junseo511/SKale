@@ -602,7 +602,7 @@ function App(): ReactNode {
                     >
                       {plan && plan.availableInvestmentAmount > 0
                         ? '후보 보기'
-                        : '먼저 계산하기'}
+                        : '계산하기'}
                       <ChevronRight size={16} />
                     </button>
                   </div>
@@ -1907,7 +1907,7 @@ function PlanSection({
                       onClick={() => onUseDraft(stockResearchRequest)}
                     >
                       <TrendingUp size={15} />
-                      최신 후보 조사 요청
+                      후보 보기
                     </button>
                   </div>
                   <div>
