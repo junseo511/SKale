@@ -58,6 +58,21 @@ import { createPaydayPlan, type PaydayPlan } from './domain/paydayPlan'
 import './App.css'
 
 type PortfolioMarket = '한국' | '미국' | '한국·미국'
+type NextActionKind = 'salary' | 'message' | 'plan'
+
+interface FinancialProfileItem {
+  label: string
+  value: string
+  isComplete: boolean
+}
+
+interface NextAction {
+  kind: NextActionKind
+  title: string
+  description: string
+  primaryLabel: string
+  draft?: string
+}
 
 const MAX_IMAGE_COUNT = 4
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024
@@ -72,7 +87,7 @@ function App(): ReactNode {
   const savedWorkspace = useMemo(() => workspaceRepository.load(), [])
   const [messages, setMessages] = useState<ConversationMessage[]>(
     savedWorkspace?.messages.length
-      ? savedWorkspace.messages
+      ? normalizeConversationMessages(savedWorkspace.messages)
       : [INITIAL_AGENT_MESSAGE],
   )
   const [profile, setProfile] = useState<FinancialProfile>(() => {
@@ -120,6 +135,11 @@ function App(): ReactNode {
     [paydayInput],
   )
   const completedProfileFields = countCompletedProfileFields(profile)
+  const nextAction = getNextAction(profile)
+  const shouldShowQuickMessages =
+    completedProfileFields > 0 ||
+    pendingResponse !== null ||
+    messages.some((message) => message.role === 'user')
   const quickMessages = [
     `${Number(targetMonth.split('-')[1])}월의 사용 내역을 정리하고 싶어.`,
     '월세 70만원, 부모님 용돈 20만원, 운동비 10만원을 매달 먼저 빼줘.',
@@ -410,6 +430,19 @@ function App(): ReactNode {
               {messages.map((message) => (
                 <MessageBubble message={message} key={message.id} />
               ))}
+              {!pendingResponse && !isReplying && (
+                <NextActionPanel
+                  action={nextAction}
+                  targetMonth={targetMonth}
+                  onOpenSalaryCalculator={() => setIsSalaryCalculatorOpen(true)}
+                  onUseDraft={(message) => {
+                    setDraft(message)
+                    requestAnimationFrame(() =>
+                      composerTextAreaReference.current?.focus(),
+                    )
+                  }}
+                />
+              )}
               {isReplying && (
                 <div className="message-row agent">
                   <span className="message-avatar">
@@ -437,67 +470,69 @@ function App(): ReactNode {
               <div ref={messageEndReference} />
             </div>
 
-            <div className="suggestion-section">
-              <span>이렇게 시작해 보세요</span>
-              <div className="quick-message-list" aria-label="추천 질문">
-                <button
-                  className="calculator-quick-button"
-                  type="button"
-                  onClick={() => setIsSalaryCalculatorOpen(true)}
-                >
-                  <Calculator size={16} />
-                  실수령액 입력하기
-                </button>
-                {quickMessages.map((message, index) => (
+            {shouldShowQuickMessages && (
+              <div className="suggestion-section">
+                <span>바로 입력하기</span>
+                <div className="quick-message-list" aria-label="추천 질문">
                   <button
+                    className="calculator-quick-button"
                     type="button"
-                    key={message}
-                    onClick={() => setDraft(message)}
+                    onClick={() => setIsSalaryCalculatorOpen(true)}
                   >
-                    {index === 3 ? (
-                      <TrendingUp size={16} />
-                    ) : index === 1 ? (
-                      <WalletCards size={16} />
-                    ) : (
-                      <MessageCircleMore size={16} />
-                    )}
-                    {message}
+                    <Calculator size={16} />
+                    실수령액 입력하기
                   </button>
-                ))}
-                <div className="portfolio-suggestion-card">
-                  <div>
-                    <Globe2 size={17} />
-                    <span>주식 포트폴리오 만들기</span>
+                  {quickMessages.map((message, index) => (
+                    <button
+                      type="button"
+                      key={message}
+                      onClick={() => setDraft(message)}
+                    >
+                      {index === 3 ? (
+                        <TrendingUp size={16} />
+                      ) : index === 1 ? (
+                        <WalletCards size={16} />
+                      ) : (
+                        <MessageCircleMore size={16} />
+                      )}
+                      {message}
+                    </button>
+                  ))}
+                  <div className="portfolio-suggestion-card">
+                    <div>
+                      <Globe2 size={17} />
+                      <span>주식 포트폴리오 만들기</span>
+                    </div>
+                    <div className="market-selector" aria-label="투자 시장 선택">
+                      {(['한국', '미국', '한국·미국'] as PortfolioMarket[]).map(
+                        (market) => (
+                          <button
+                            className={
+                              portfolioMarket === market ? 'selected' : ''
+                            }
+                            type="button"
+                            key={market}
+                            onClick={() => setPortfolioMarket(market)}
+                          >
+                            {market === '한국·미국' ? '둘 다' : market}
+                          </button>
+                        ),
+                      )}
+                    </div>
+                    <button
+                      className="portfolio-request-button"
+                      type="button"
+                      onClick={() => setDraft(portfolioRequest)}
+                    >
+                      {plan && plan.availableInvestmentAmount > 0
+                        ? `${formatWon(plan.availableInvestmentAmount)}으로 구성 요청`
+                        : '구성 요청하기'}
+                      <ChevronRight size={16} />
+                    </button>
                   </div>
-                  <div className="market-selector" aria-label="투자 시장 선택">
-                    {(['한국', '미국', '한국·미국'] as PortfolioMarket[]).map(
-                      (market) => (
-                        <button
-                          className={
-                            portfolioMarket === market ? 'selected' : ''
-                          }
-                          type="button"
-                          key={market}
-                          onClick={() => setPortfolioMarket(market)}
-                        >
-                          {market === '한국·미국' ? '둘 다' : market}
-                        </button>
-                      ),
-                    )}
-                  </div>
-                  <button
-                    className="portfolio-request-button"
-                    type="button"
-                    onClick={() => setDraft(portfolioRequest)}
-                  >
-                    {plan && plan.availableInvestmentAmount > 0
-                      ? `${formatWon(plan.availableInvestmentAmount)}으로 구성 요청`
-                      : '구성 요청하기'}
-                    <ChevronRight size={16} />
-                  </button>
                 </div>
               </div>
-            </div>
+            )}
 
             {attachments.length > 0 && (
               <div className="attachment-preview-list">
@@ -658,6 +693,80 @@ function App(): ReactNode {
         <span>본 자료의 정보는 참고용이며, 투자에 대한 책임은 본인에게 있습니다.</span>
       </footer>
     </div>
+  )
+}
+
+function NextActionPanel({
+  action,
+  targetMonth,
+  onOpenSalaryCalculator,
+  onUseDraft,
+}: {
+  action: NextAction
+  targetMonth: string
+  onOpenSalaryCalculator: () => void
+  onUseDraft: (message: string) => void
+}): ReactNode {
+  const secondaryActions = [
+    {
+      label: `${Number(targetMonth.split('-')[1])}월 사용내역`,
+      message: `${Number(targetMonth.split('-')[1])}월의 사용 내역을 정리하고 싶어.`,
+      icon: <CalendarDays size={15} />,
+    },
+    {
+      label: '고정비 알려주기',
+      message: '월세 70만원, 부모님 용돈 20만원, 운동비 10만원을 매달 먼저 빼줘.',
+      icon: <WalletCards size={15} />,
+    },
+    {
+      label: '취향 남기기',
+      message: '외식과 여행 예산은 너무 줄이고 싶지 않아.',
+      icon: <MessageCircleMore size={15} />,
+    },
+  ]
+
+  function runPrimaryAction(): void {
+    if (action.kind === 'salary') {
+      onOpenSalaryCalculator()
+      return
+    }
+    if (action.kind === 'plan') {
+      document.getElementById('payday-plan')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+      return
+    }
+    if (action.draft) {
+      onUseDraft(action.draft)
+    }
+  }
+
+  return (
+    <section className="next-action-panel" aria-label="다음 입력">
+      <div className="next-action-copy">
+        <span>다음 한 가지</span>
+        <h2>{action.title}</h2>
+        <p>{action.description}</p>
+      </div>
+      <div className="next-action-buttons">
+        <button className="primary-next-action" type="button" onClick={runPrimaryAction}>
+          {action.kind === 'salary' ? <Calculator size={16} /> : <ArrowUp size={16} />}
+          {action.primaryLabel}
+        </button>
+        {secondaryActions.map((item) => (
+          <button
+            className="secondary-next-action"
+            type="button"
+            key={item.label}
+            onClick={() => onUseDraft(item.message)}
+          >
+            {item.icon}
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -864,22 +973,9 @@ function ProfileCard({
   profile: FinancialProfile
   completed: number
 }): ReactNode {
-  const items = [
-    ['월 실수령액', formatNullableWon(profile.monthlySalary)],
-    ['필수 생활비', formatNullableWon(profile.essentialExpense)],
-    ['카드·부채', formatNullableWon(profile.debtPayment)],
-    ['현재 비상금', formatNullableWon(profile.currentEmergencyFund)],
-    ['비상금 목표', formatNullableWon(profile.targetEmergencyFund)],
-    ['목표', profile.goalName || '아직 안 알려주셨어요'],
-    ['목표 저축', formatNullableWon(profile.goalMonthlyAmount)],
-    ['여유 생활비', formatNullableWon(profile.flexibleSpending)],
-    [
-      '투자 조건',
-      profile.riskProfile && profile.investmentHorizon
-        ? `${profile.riskProfile} · ${profile.investmentHorizon}`
-        : '아직 안 알려주셨어요',
-    ],
-  ]
+  const items = getFinancialProfileItems(profile)
+  const missingItems = items.filter((item) => !item.isComplete)
+  const progressPercent = Math.round((completed / PROFILE_FIELD_COUNT) * 100)
 
   return (
     <section className="context-card profile-card">
@@ -888,25 +984,38 @@ function ProfileCard({
           <span>내 정보</span>
           <h2>지금까지 입력한 내용</h2>
         </div>
-        <strong>{Math.round((completed / PROFILE_FIELD_COUNT) * 100)}%</strong>
+        <strong>{progressPercent}%</strong>
       </div>
       <div className="progress-track">
-        <i style={{ width: `${(completed / PROFILE_FIELD_COUNT) * 100}%` }} />
+        <i style={{ width: `${progressPercent}%` }} />
       </div>
-      <dl>
-        {items.map(([label, value]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd
-              className={
-                value === '아직 안 알려주셨어요' ? 'empty' : ''
-              }
-            >
-              {value}
-            </dd>
+      <div className="profile-next-summary">
+        <span>{missingItems.length > 0 ? '입력 현황' : '입력 완료'}</span>
+        <strong>
+          {missingItems.length > 0
+            ? `${missingItems.length}개 남음`
+            : '계획을 만들 준비가 됐어요'}
+        </strong>
+        <p>
+          {missingItems.length > 0
+            ? '필요한 값이 채워질수록 월급 배분이 자동으로 가까워져요.'
+            : '이제 아래 월급 계획에서 금액과 투자 가능액을 확인하세요.'}
+        </p>
+      </div>
+      <div className="profile-check-list">
+        {items.map((item) => (
+          <div
+            className={item.isComplete ? 'complete' : 'missing'}
+            key={item.label}
+          >
+            <i aria-hidden="true" />
+            <span>{item.label}</span>
+            <strong aria-label={item.isComplete ? undefined : '미입력'}>
+              {item.isComplete ? item.value : ''}
+            </strong>
           </div>
         ))}
-      </dl>
+      </div>
       {profile.preferences.length > 0 && (
         <div className="preference-section">
           <span>지키고 싶은 취향</span>
@@ -1469,7 +1578,7 @@ function PlanSection({
   onSave: () => void
 }): ReactNode {
   return (
-    <section className="plan-section">
+    <section className="plan-section" id="payday-plan">
       <div className="section-heading">
         <div>
           <span>PAYDAY PLAN</span>
@@ -1624,6 +1733,146 @@ function getProfilePatchEntries(
     ])
 }
 
+function getFinancialProfileItems(profile: FinancialProfile): FinancialProfileItem[] {
+  return [
+    {
+      label: '월 실수령액',
+      value: formatNullableWon(profile.monthlySalary),
+      isComplete: profile.monthlySalary !== null,
+    },
+    {
+      label: '필수 생활비',
+      value: formatNullableWon(profile.essentialExpense),
+      isComplete: profile.essentialExpense !== null,
+    },
+    {
+      label: '카드·부채',
+      value: formatNullableWon(profile.debtPayment),
+      isComplete: profile.debtPayment !== null,
+    },
+    {
+      label: '현재 비상금',
+      value: formatNullableWon(profile.currentEmergencyFund),
+      isComplete: profile.currentEmergencyFund !== null,
+    },
+    {
+      label: '비상금 목표',
+      value: formatNullableWon(profile.targetEmergencyFund),
+      isComplete: profile.targetEmergencyFund !== null,
+    },
+    {
+      label: '목표',
+      value: profile.goalName || '목표 없음',
+      isComplete: profile.goalName.trim().length > 0,
+    },
+    {
+      label: '목표 저축',
+      value: formatNullableWon(profile.goalMonthlyAmount),
+      isComplete: profile.goalMonthlyAmount !== null,
+    },
+    {
+      label: '여유 생활비',
+      value: formatNullableWon(profile.flexibleSpending),
+      isComplete: profile.flexibleSpending !== null,
+    },
+    {
+      label: '투자 조건',
+      value:
+        profile.riskProfile && profile.investmentHorizon
+          ? `${profile.riskProfile} · ${profile.investmentHorizon}`
+          : '미정',
+      isComplete:
+        profile.riskProfile !== null && profile.investmentHorizon !== null,
+    },
+  ]
+}
+
+function getNextAction(profile: FinancialProfile): NextAction {
+  if (profile.monthlySalary === null) {
+    return {
+      kind: 'salary',
+      title: '월 실수령액을 알려주세요',
+      description:
+        '정확한 금액을 몰라도 괜찮아요. 계산기로 예상 금액을 넣고 나중에 바꿀 수 있어요.',
+      primaryLabel: '실수령액 입력하기',
+    }
+  }
+  if (profile.essentialExpense === null) {
+    return {
+      kind: 'message',
+      title: '매달 꼭 나가는 돈을 알려주세요',
+      description:
+        '월세, 통신비, 교통비처럼 월급날 먼저 빼둘 돈을 한 문장으로 말하면 됩니다.',
+      primaryLabel: '고정비 예시 넣기',
+      draft: '월세 70만원, 통신비 7만원, 교통비 10만원을 매달 먼저 빼줘.',
+    }
+  }
+  if (profile.debtPayment === null) {
+    return {
+      kind: 'message',
+      title: '카드값이나 갚을 돈이 있나요?',
+      description:
+        '없으면 0원이라고 알려주세요. 부채가 있으면 투자보다 먼저 반영합니다.',
+      primaryLabel: '카드·부채 입력하기',
+      draft: '이번 달 카드값과 갚을 돈은 0원이야.',
+    }
+  }
+  if (
+    profile.currentEmergencyFund === null ||
+    profile.targetEmergencyFund === null
+  ) {
+    return {
+      kind: 'message',
+      title: '비상금 기준을 정해볼게요',
+      description:
+        '지금 모아둔 비상금과 목표 금액을 알면 안전망을 먼저 계산할 수 있어요.',
+      primaryLabel: '비상금 입력하기',
+      draft: '현재 비상금은 100만원이고 목표는 500만원이야.',
+    }
+  }
+  if (
+    profile.goalName.trim().length === 0 ||
+    profile.goalMonthlyAmount === null
+  ) {
+    return {
+      kind: 'message',
+      title: '가까운 목표가 있나요?',
+      description:
+        '여행, 이사, 노트북처럼 따로 모을 돈이 있으면 투자금과 섞이지 않게 분리해요.',
+      primaryLabel: '목표 입력하기',
+      draft: '여행 자금으로 매달 30만원씩 따로 모으고 싶어.',
+    }
+  }
+  if (profile.flexibleSpending === null) {
+    return {
+      kind: 'message',
+      title: '숨 쉴 여유 생활비를 정해요',
+      description:
+        '외식, 취미, 여행처럼 줄이기 어려운 돈을 정해야 계획이 오래 갑니다.',
+      primaryLabel: '여유 생활비 입력하기',
+      draft: '외식과 취미를 위해 여유 생활비는 월 40만원으로 잡고 싶어.',
+    }
+  }
+  if (profile.riskProfile === null || profile.investmentHorizon === null) {
+    return {
+      kind: 'message',
+      title: '투자 성향과 기간만 남았어요',
+      description:
+        '안정형·균형형·성장형 중 어느 쪽인지, 돈을 언제쯤 쓸지도 알려주세요.',
+      primaryLabel: '투자 조건 입력하기',
+      draft: '투자 성향은 균형형이고 투자 기간은 3년 이상으로 보고 있어.',
+    }
+  }
+
+  return {
+    kind: 'plan',
+    title: '월급 계획을 확인할 차례예요',
+    description:
+      '입력한 정보로 생활비, 비상금, 목표 자금, 투자 가능 금액을 계산했어요.',
+    primaryLabel: '계획 보러가기',
+  }
+}
+
 function formatCustomUseBucket(
   bucket: 'essential' | 'goal' | 'flexible',
 ): string {
@@ -1705,6 +1954,16 @@ function createMonthlySpendingClarification(
   ].join(', ')
 
   return `${formatMonth(summary.month)} 사용 요약을 확인했어요. 현재 제안은 ${amounts}입니다. 틀린 부분은 다음처럼 고쳐주세요: `
+}
+
+function normalizeConversationMessages(
+  messages: ConversationMessage[],
+): ConversationMessage[] {
+  return messages.map((message) =>
+    message.id === INITIAL_AGENT_MESSAGE.id
+      ? { ...message, content: INITIAL_AGENT_MESSAGE.content }
+      : message,
+  )
 }
 
 export default App

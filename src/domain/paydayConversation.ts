@@ -169,7 +169,7 @@ export const INITIAL_AGENT_MESSAGE: ConversationMessage = {
   id: 'initial-agent-message',
   role: 'agent',
   content:
-    '먼저 월 실수령액을 알려주세요. 정확한 금액을 모르시면 아래 계산기로 확인할 수 있어요.',
+    '월급 계획을 같이 만들어볼게요. 아래 카드에서 지금 할 일을 바로 시작할 수 있어요.',
   createdAt: new Date(0).toISOString(),
   status: 'sent',
   attachments: [],
