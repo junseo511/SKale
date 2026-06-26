@@ -102,6 +102,7 @@ function App(): ReactNode {
     useState<PortfolioMarket>('미국')
   const abortControllerReference = useRef<AbortController | null>(null)
   const messageEndReference = useRef<HTMLDivElement | null>(null)
+  const composerTextAreaReference = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     workspaceRepository.save({ messages, profile, monthlySpending })
@@ -234,7 +235,7 @@ function App(): ReactNode {
     setIsPlanSaved(false)
   }
 
-  function applyMonthlySpendingProposal(): void {
+  function applyMonthlySpendingProposal(isReviewed = false): void {
     const proposal = pendingResponse?.monthlySpendingProposal
     if (!proposal) {
       return
@@ -243,7 +244,11 @@ function App(): ReactNode {
       ...currentSummaries.filter(
         (summary) => summary.month !== proposal.month,
       ),
-      { ...proposal, id: crypto.randomUUID() },
+      {
+        ...proposal,
+        id: crypto.randomUUID(),
+        needReview: proposal.needReview && !isReviewed,
+      },
     ])
     setPendingResponse((currentResponse) =>
       currentResponse
@@ -258,6 +263,28 @@ function App(): ReactNode {
     }
     planRepository.save(plan)
     setIsPlanSaved(true)
+  }
+
+  function updateMonthlySpendingSummary(
+    summaryId: string,
+    patch: Partial<MonthlySpendingSummary>,
+  ): void {
+    setMonthlySpending((currentSummaries) =>
+      currentSummaries.map((summary) =>
+        summary.id === summaryId ? { ...summary, ...patch } : summary,
+      ),
+    )
+  }
+
+  function markMonthlySpendingReviewed(summaryId: string): void {
+    updateMonthlySpendingSummary(summaryId, { needReview: false })
+  }
+
+  function startMonthlySpendingClarification(
+    summary: Omit<MonthlySpendingSummary, 'id'>,
+  ): void {
+    setDraft(createMonthlySpendingClarification(summary))
+    requestAnimationFrame(() => composerTextAreaReference.current?.focus())
   }
 
   function resetWorkspace(): void {
@@ -345,19 +372,19 @@ function App(): ReactNode {
             <Principle
               icon={<FileText />}
               title="지난 소비 확인"
-              text="사진이나 텍스트로"
+              text="간편하게 등록하고"
             />
             <ChevronRight size={18} />
             <Principle
               icon={<UserRound />}
-              title="내 기준 반영"
+              title="나만의 기준"
               text="줄이고 싶지 않은 지출"
             />
             <ChevronRight size={18} />
             <Principle
               icon={<PiggyBank />}
               title="월급 나누기"
-              text="쓸 돈부터 투자까지"
+              text="사용할 돈부터 투자까지"
             />
           </div>
         </section>
@@ -402,6 +429,9 @@ function App(): ReactNode {
                   response={pendingResponse}
                   onApplyProfile={applyProfileProposal}
                   onApplyMonthlySpending={applyMonthlySpendingProposal}
+                  onStartMonthlySpendingReview={
+                    startMonthlySpendingClarification
+                  }
                 />
               )}
               <div ref={messageEndReference} />
@@ -505,6 +535,7 @@ function App(): ReactNode {
 
             <div className="composer">
               <textarea
+                ref={composerTextAreaReference}
                 aria-label="SKale Agent에게 보낼 메시지"
                 value={draft}
                 placeholder="궁금한 점이나 내 상황을 편하게 적어주세요"
@@ -571,6 +602,9 @@ function App(): ReactNode {
             <ProfileCard profile={profile} completed={completedProfileFields} />
             <MonthlyHistoryCard
               summaries={monthlySpending}
+              onUpdate={updateMonthlySpendingSummary}
+              onMarkReviewed={markMonthlySpendingReviewed}
+              onRequestClarification={startMonthlySpendingClarification}
               onDelete={(summaryId) =>
                 setMonthlySpending((currentSummaries) =>
                   currentSummaries.filter(
@@ -669,10 +703,14 @@ function ProposalCards({
   response,
   onApplyProfile,
   onApplyMonthlySpending,
+  onStartMonthlySpendingReview,
 }: {
   response: PaydayConversationResponse
   onApplyProfile: () => void
-  onApplyMonthlySpending: () => void
+  onApplyMonthlySpending: (isReviewed?: boolean) => void
+  onStartMonthlySpendingReview: (
+    summary: Omit<MonthlySpendingSummary, 'id'>,
+  ) => void
 }): ReactNode {
   const profileEntries = getProfilePatchEntries(response.profilePatch)
   const customUses = response.profilePatch.customUses
@@ -742,9 +780,9 @@ function ProposalCards({
               <CalendarDays size={15} />
               {formatMonth(spendingProposal.month)} 사용 요약
             </span>
-            <button type="button" onClick={onApplyMonthlySpending}>
+            <button type="button" onClick={() => onApplyMonthlySpending()}>
               <Check size={14} />
-              월 기록에 추가
+              {spendingProposal.needReview ? '일단 추가' : '월 기록에 추가'}
             </button>
           </div>
           <div className="spending-proposal-grid">
@@ -770,10 +808,23 @@ function ProposalCards({
             </div>
           )}
           {spendingProposal.needReview && (
-            <small>
-              <CircleAlert size={13} />
-              이미지나 금액이 불확실해 적용 후에도 확인이 필요해요.
-            </small>
+            <div className="proposal-review-assist">
+              <div>
+                <CircleAlert size={14} />
+                <span>이미지나 금액이 불확실해 확인이 필요해요.</span>
+              </div>
+              <button type="button" onClick={() => onApplyMonthlySpending(true)}>
+                <Check size={13} />
+                맞아요, 추가
+              </button>
+              <button
+                type="button"
+                onClick={() => onStartMonthlySpendingReview(spendingProposal)}
+              >
+                <MessageCircleMore size={13} />
+                정정해서 보내기
+              </button>
+            </div>
           )}
         </article>
       )}
@@ -891,9 +942,18 @@ function ProfileCard({
 
 function MonthlyHistoryCard({
   summaries,
+  onUpdate,
+  onMarkReviewed,
+  onRequestClarification,
   onDelete,
 }: {
   summaries: MonthlySpendingSummary[]
+  onUpdate: (
+    summaryId: string,
+    patch: Partial<MonthlySpendingSummary>,
+  ) => void
+  onMarkReviewed: (summaryId: string) => void
+  onRequestClarification: (summary: MonthlySpendingSummary) => void
   onDelete: (summaryId: string) => void
 }): ReactNode {
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -985,6 +1045,56 @@ function MonthlyHistoryCard({
                 ))}
               </div>
             )}
+            {selectedSummary.needReview && (
+              <div className="history-review-panel">
+                <div className="history-review-heading">
+                  <CircleAlert size={15} />
+                  <div>
+                    <strong>확인이 필요한 기록이에요</strong>
+                    <p>맞으면 바로 완료하고, 다르면 금액을 고치거나 AI에게 이어서 물어볼 수 있어요.</p>
+                  </div>
+                </div>
+                <div className="history-review-fields">
+                  <MoneyReviewField
+                    label="총소비"
+                    value={selectedSummary.totalExpense}
+                    onChange={(totalExpense) =>
+                      onUpdate(selectedSummary.id, { totalExpense })
+                    }
+                  />
+                  <MoneyReviewField
+                    label="필수지출"
+                    value={selectedSummary.essentialExpense}
+                    onChange={(essentialExpense) =>
+                      onUpdate(selectedSummary.id, { essentialExpense })
+                    }
+                  />
+                  <MoneyReviewField
+                    label="선택지출"
+                    value={selectedSummary.flexibleExpense}
+                    onChange={(flexibleExpense) =>
+                      onUpdate(selectedSummary.id, { flexibleExpense })
+                    }
+                  />
+                </div>
+                <div className="history-review-actions">
+                  <button
+                    type="button"
+                    onClick={() => onMarkReviewed(selectedSummary.id)}
+                  >
+                    <Check size={14} />
+                    맞아요
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRequestClarification(selectedSummary)}
+                  >
+                    <MessageCircleMore size={14} />
+                    정정해서 보내기
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="history-meta">
               <span>
                 {selectedSummary.source === 'text'
@@ -1017,6 +1127,34 @@ function MonthlyHistoryCard({
         </div>
       )}
     </section>
+  )
+}
+
+function MoneyReviewField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: number | null
+  onChange: (value: number | null) => void
+}): ReactNode {
+  return (
+    <label>
+      <span>{label}</span>
+      <div>
+        <input
+          inputMode="numeric"
+          value={value === null ? '' : value.toLocaleString()}
+          placeholder="모름"
+          onChange={(event) => {
+            const normalizedValue = event.target.value.trim()
+            onChange(normalizedValue ? parseMoney(normalizedValue) : null)
+          }}
+        />
+        <small>원</small>
+      </div>
+    </label>
   )
 }
 
@@ -1555,6 +1693,18 @@ function parseMoney(value: string): number {
 
 function formatNullableWon(value: number | null): string {
   return value === null ? '확인 필요' : formatWon(value)
+}
+
+function createMonthlySpendingClarification(
+  summary: Omit<MonthlySpendingSummary, 'id'>,
+): string {
+  const amounts = [
+    `총소비 ${formatNullableWon(summary.totalExpense)}`,
+    `필수지출 ${formatNullableWon(summary.essentialExpense)}`,
+    `선택지출 ${formatNullableWon(summary.flexibleExpense)}`,
+  ].join(', ')
+
+  return `${formatMonth(summary.month)} 사용 요약을 확인했어요. 현재 제안은 ${amounts}입니다. 틀린 부분은 다음처럼 고쳐주세요: `
 }
 
 export default App
