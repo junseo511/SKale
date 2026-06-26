@@ -141,13 +141,14 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .profile-next-summary strong { display: block; margin-top: 5px; font-size: 15px; }
 .profile-next-summary p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .profile-check-list { display: grid; gap: 6px; }
-.profile-check-list > div { display: grid; min-height: 36px; padding: 8px 0; border-bottom: 1px solid #f2ecec; align-items: center; grid-template-columns: 11px 1fr auto; gap: 8px; }
+.profile-check-list > div { display: grid; min-height: 36px; padding: 8px 0; border-bottom: 1px solid #f2ecec; align-items: center; grid-template-columns: 11px 1fr auto auto; gap: 8px; }
 .profile-check-list i { width: 7px; height: 7px; border-radius: 50%; background: #d8cfd1; }
 .profile-check-list .complete i { background: #39a36f; box-shadow: 0 0 0 3px #e4f6ec; }
 .profile-check-list span { color: var(--muted); font-size: 12px; }
 .profile-check-list strong { min-width: 32px; max-width: 140px; overflow: hidden; color: #3e3638; font-size: 12px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .profile-check-list .missing strong::before { content: ""; display: inline-block; width: 16px; height: 2px; border-radius: 999px; background: #d8cfd1; vertical-align: middle; }
 .profile-check-list .missing strong { color: #b1a6a8; font-weight: 650; }
+.profile-check-list em { padding: 3px 6px; border-radius: 999px; color: #9b5b18; background: #fff3df; font-size: 10px; font-style: normal; font-weight: 800; }
 .preference-section { margin-top: 15px; }
 .preference-section > span { color: var(--muted); font-size: 12px; }
 .preference-section > div { display: flex; margin-top: 8px; flex-wrap: wrap; gap: 6px; }

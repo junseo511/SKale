@@ -165,6 +165,11 @@ export const EMPTY_FINANCIAL_PROFILE: FinancialProfile = {
   customUses: [],
 }
 
+const DEFAULT_ESSENTIAL_EXPENSE_RATIO = 0.5
+const DEFAULT_GOAL_MONTHLY_AMOUNT_RATIO = 0.1
+const DEFAULT_FLEXIBLE_SPENDING_RATIO = 0.2
+const DEFAULT_EMERGENCY_FUND_MONTHS = 3
+
 export const INITIAL_AGENT_MESSAGE: ConversationMessage = {
   id: 'initial-agent-message',
   role: 'agent',
@@ -218,31 +223,33 @@ export function applyFinancialProfilePatch(
 }
 
 export function toPaydayInput(profile: FinancialProfile): PaydayInput | null {
-  if (
-    profile.monthlySalary === null ||
-    profile.essentialExpense === null ||
-    profile.debtPayment === null ||
-    profile.currentEmergencyFund === null ||
-    profile.targetEmergencyFund === null ||
-    profile.goalMonthlyAmount === null ||
-    profile.flexibleSpending === null ||
-    profile.riskProfile === null ||
-    profile.investmentHorizon === null
-  ) {
+  if (profile.monthlySalary === null) {
     return null
   }
 
+  const monthlySalary = profile.monthlySalary
+  const essentialExpense =
+    profile.essentialExpense ??
+    Math.round(monthlySalary * DEFAULT_ESSENTIAL_EXPENSE_RATIO)
+  const targetEmergencyFund =
+    profile.targetEmergencyFund ??
+    Math.round(essentialExpense * DEFAULT_EMERGENCY_FUND_MONTHS)
+
   return {
-    monthlySalary: profile.monthlySalary,
-    essentialExpense: profile.essentialExpense,
-    debtPayment: profile.debtPayment,
-    currentEmergencyFund: profile.currentEmergencyFund,
-    targetEmergencyFund: profile.targetEmergencyFund,
-    goalName: profile.goalName,
-    goalMonthlyAmount: profile.goalMonthlyAmount,
-    flexibleSpending: profile.flexibleSpending,
-    riskProfile: profile.riskProfile,
-    investmentHorizon: profile.investmentHorizon,
+    monthlySalary,
+    essentialExpense,
+    debtPayment: profile.debtPayment ?? 0,
+    currentEmergencyFund: profile.currentEmergencyFund ?? 0,
+    targetEmergencyFund,
+    goalName: profile.goalName || '목표 자금',
+    goalMonthlyAmount:
+      profile.goalMonthlyAmount ??
+      Math.round(monthlySalary * DEFAULT_GOAL_MONTHLY_AMOUNT_RATIO),
+    flexibleSpending:
+      profile.flexibleSpending ??
+      Math.round(monthlySalary * DEFAULT_FLEXIBLE_SPENDING_RATIO),
+    riskProfile: profile.riskProfile ?? '균형형',
+    investmentHorizon: profile.investmentHorizon ?? '3년 이상',
     customUses: profile.customUses,
   }
 }
@@ -269,15 +276,5 @@ function calculateCustomUseTotals(
 export function countCompletedProfileFields(
   profile: FinancialProfile,
 ): number {
-  return [
-    profile.monthlySalary,
-    profile.essentialExpense,
-    profile.debtPayment,
-    profile.currentEmergencyFund,
-    profile.targetEmergencyFund,
-    profile.goalMonthlyAmount,
-    profile.flexibleSpending,
-    profile.riskProfile,
-    profile.investmentHorizon,
-  ].filter((value) => value !== null).length
+  return profile.monthlySalary === null ? 0 : 1
 }

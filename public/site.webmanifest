@@ -1,0 +1,17 @@
+{
+  "name": "SKale",
+  "short_name": "SKale",
+  "description": "월급을 생활비, 안전망, 목표 자금, 투자로 나누는 월급 의사결정 Agent",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f4f3",
+  "theme_color": "#ea002c",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

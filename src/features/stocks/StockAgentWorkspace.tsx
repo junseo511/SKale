@@ -29,19 +29,19 @@ import {
 } from '../../domain/stock'
 
 const EXAMPLE_REQUEST: StockAnalysisRequest = {
-  companyName: '예시반도체장비',
-  ticker: '000000',
+  companyName: 'SK하이닉스',
+  ticker: '000660',
   industryDescription:
-    'AI 서버 투자 확대에 따라 첨단 반도체 장비 수요가 장기적으로 증가하는 산업입니다.',
+    'AI 서버와 고성능 컴퓨팅 확대에 따라 HBM, DRAM, NAND 수요가 장기적으로 증가할 수 있는 메모리 반도체 산업입니다.',
   businessDescription:
-    '핵심 공정 장비를 제조하며 고객사 인증과 공정 노하우가 진입장벽으로 작용합니다.',
+    'DRAM과 NAND를 제조하며 HBM 등 고부가 메모리에서 기술력, 대규모 설비, 고객사 인증이 진입장벽으로 작용합니다.',
   financialData:
-    '최근 3년 매출 1,000억 → 1,250억 → 1,500억. 영업이익률 12% → 13% → 14%. 영업현금흐름은 최근 2년 플러스. 부채비율 45%.',
-  valuationData: '현재 PER 22배. 동종업계 평균 PER 18배.',
+    '메모리 사이클에 따라 매출과 영업이익 변동성이 큽니다. HBM 수요 확대 구간에서는 수익성이 개선될 수 있으나, 설비투자와 재고 사이클 확인이 필요합니다.',
+  valuationData: 'PER, PBR, EV/EBITDA는 메모리 업황 고점과 저점에 따라 왜곡될 수 있어 사이클 평균과 함께 봐야 합니다.',
   managementNotes:
-    '최근 3년 유상증자 없음. 설비투자와 연구개발 비중을 확대 중입니다.',
+    '첨단 메모리 투자와 연구개발을 지속하고 있으며, CAPEX가 현금흐름에 미치는 영향 확인이 필요합니다.',
   userConcern:
-    '고객사 설비투자가 둔화되면 매출 변동성이 커질 수 있다는 점이 우려됩니다.',
+    'AI 수요가 둔화되거나 HBM 경쟁이 심해질 때 이익률이 빠르게 훼손될 수 있다는 점이 우려됩니다.',
 }
 
 interface StockAgentWorkspaceProps {

@@ -64,6 +64,7 @@ interface FinancialProfileItem {
   label: string
   value: string
   isComplete: boolean
+  isDefault: boolean
 }
 
 interface NextAction {
@@ -76,7 +77,7 @@ interface NextAction {
 
 const MAX_IMAGE_COUNT = 4
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024
-const PROFILE_FIELD_COUNT = 9
+const PROFILE_FIELD_COUNT = 1
 const agent = new HttpPaydayConversationAgent({
   baseUrl: import.meta.env.VITE_API_BASE_URL,
 })
@@ -144,7 +145,7 @@ function App(): ReactNode {
     `${Number(targetMonth.split('-')[1])}월의 사용 내역을 정리하고 싶어.`,
     '월세 70만원, 부모님 용돈 20만원, 운동비 10만원을 매달 먼저 빼줘.',
     '외식과 여행 예산은 너무 줄이고 싶지 않아.',
-    '관심 종목을 장기 투자 기준으로 점검하고 싶어.',
+    '비상금과 투자는 어떤 기준으로 나누면 좋을까?',
   ]
   const portfolioRequest =
     plan && plan.availableInvestmentAmount > 0
@@ -629,7 +630,7 @@ function App(): ReactNode {
 
             <p className="privacy-copy">
               <LockKeyhole size={13} />
-              사진을 올릴 땐 민감한 개인정보를 가려주세요.
+              돈 관련 질문은 참고 관점과 함께 답해요. 사진을 올릴 땐 민감한 개인정보를 가려주세요.
             </p>
           </section>
 
@@ -653,7 +654,6 @@ function App(): ReactNode {
 
         <PlanSection
           plan={plan}
-          profile={profile}
           isSaved={isPlanSaved}
           onSave={savePlan}
         />
@@ -973,8 +973,8 @@ function ProfileCard({
   profile: FinancialProfile
   completed: number
 }): ReactNode {
-  const items = getFinancialProfileItems(profile)
-  const missingItems = items.filter((item) => !item.isComplete)
+  const estimatedInput = toPaydayInput(profile)
+  const items = getFinancialProfileItems(profile, estimatedInput)
   const progressPercent = Math.round((completed / PROFILE_FIELD_COUNT) * 100)
 
   return (
@@ -990,22 +990,28 @@ function ProfileCard({
         <i style={{ width: `${progressPercent}%` }} />
       </div>
       <div className="profile-next-summary">
-        <span>{missingItems.length > 0 ? '입력 현황' : '입력 완료'}</span>
+        <span>{profile.monthlySalary === null ? '입력 현황' : '기본 배분 준비'}</span>
         <strong>
-          {missingItems.length > 0
-            ? `${missingItems.length}개 남음`
-            : '계획을 만들 준비가 됐어요'}
+          {profile.monthlySalary === null
+            ? '월급만 알려주세요'
+            : '나머지는 자동 초안이에요'}
         </strong>
         <p>
-          {missingItems.length > 0
-            ? '필요한 값이 채워질수록 월급 배분이 자동으로 가까워져요.'
-            : '이제 아래 월급 계획에서 금액과 투자 가능액을 확인하세요.'}
+          {profile.monthlySalary === null
+            ? '월 실수령액이 들어오면 한국형 기본 비율로 계획을 먼저 만들어요.'
+            : '생활비, 목표, 투자 조건은 채팅으로 언제든 조정할 수 있어요.'}
         </p>
       </div>
       <div className="profile-check-list">
         {items.map((item) => (
           <div
-            className={item.isComplete ? 'complete' : 'missing'}
+            className={
+              item.isComplete
+                ? item.isDefault
+                  ? 'complete defaulted'
+                  : 'complete'
+                : 'missing'
+            }
             key={item.label}
           >
             <i aria-hidden="true" />
@@ -1013,6 +1019,7 @@ function ProfileCard({
             <strong aria-label={item.isComplete ? undefined : '미입력'}>
               {item.isComplete ? item.value : ''}
             </strong>
+            {item.isDefault && <em>자동</em>}
           </div>
         ))}
       </div>
@@ -1568,12 +1575,10 @@ function CountField({
 
 function PlanSection({
   plan,
-  profile,
   isSaved,
   onSave,
 }: {
   plan: PaydayPlan | null
-  profile: FinancialProfile
   isSaved: boolean
   onSave: () => void
 }): ReactNode {
@@ -1583,7 +1588,7 @@ function PlanSection({
         <div>
           <span>PAYDAY PLAN</span>
           <h2>입력한 내용으로 월급을 나눠드려요</h2>
-          <p>필요한 정보가 모이면 생활비, 저축, 투자 금액을 바로 보여드려요.</p>
+          <p>월급만 있으면 기본 비율로 먼저 계산하고, 대화로 세부 금액을 바꿀 수 있어요.</p>
         </div>
       </div>
 
@@ -1625,7 +1630,7 @@ function PlanSection({
             <aside className="portfolio-summary">
               <span>투자금 나누기</span>
               <h3>
-                {profile.riskProfile} · {profile.investmentHorizon}
+                {plan.input.riskProfile} · {plan.input.investmentHorizon}
               </h3>
               {plan.portfolio.length > 0 ? (
                 <div>
@@ -1733,56 +1738,96 @@ function getProfilePatchEntries(
     ])
 }
 
-function getFinancialProfileItems(profile: FinancialProfile): FinancialProfileItem[] {
+function getFinancialProfileItems(
+  profile: FinancialProfile,
+  estimatedInput: ReturnType<typeof toPaydayInput>,
+): FinancialProfileItem[] {
   return [
     {
       label: '월 실수령액',
       value: formatNullableWon(profile.monthlySalary),
       isComplete: profile.monthlySalary !== null,
+      isDefault: false,
     },
     {
       label: '필수 생활비',
-      value: formatNullableWon(profile.essentialExpense),
-      isComplete: profile.essentialExpense !== null,
+      value: estimatedInput
+        ? formatWon(estimatedInput.essentialExpense)
+        : formatNullableWon(profile.essentialExpense),
+      isComplete:
+        profile.essentialExpense !== null || estimatedInput !== null,
+      isDefault: profile.essentialExpense === null && estimatedInput !== null,
     },
     {
       label: '카드·부채',
-      value: formatNullableWon(profile.debtPayment),
-      isComplete: profile.debtPayment !== null,
+      value: estimatedInput
+        ? formatWon(estimatedInput.debtPayment)
+        : formatNullableWon(profile.debtPayment),
+      isComplete: profile.debtPayment !== null || estimatedInput !== null,
+      isDefault: profile.debtPayment === null && estimatedInput !== null,
     },
     {
       label: '현재 비상금',
-      value: formatNullableWon(profile.currentEmergencyFund),
-      isComplete: profile.currentEmergencyFund !== null,
+      value: estimatedInput
+        ? formatWon(estimatedInput.currentEmergencyFund)
+        : formatNullableWon(profile.currentEmergencyFund),
+      isComplete:
+        profile.currentEmergencyFund !== null || estimatedInput !== null,
+      isDefault:
+        profile.currentEmergencyFund === null && estimatedInput !== null,
     },
     {
       label: '비상금 목표',
-      value: formatNullableWon(profile.targetEmergencyFund),
-      isComplete: profile.targetEmergencyFund !== null,
+      value: estimatedInput
+        ? formatWon(estimatedInput.targetEmergencyFund)
+        : formatNullableWon(profile.targetEmergencyFund),
+      isComplete:
+        profile.targetEmergencyFund !== null || estimatedInput !== null,
+      isDefault:
+        profile.targetEmergencyFund === null && estimatedInput !== null,
     },
     {
       label: '목표',
-      value: profile.goalName || '목표 없음',
-      isComplete: profile.goalName.trim().length > 0,
+      value: estimatedInput?.goalName ?? profile.goalName,
+      isComplete:
+        profile.goalName.trim().length > 0 || estimatedInput !== null,
+      isDefault:
+        profile.goalName.trim().length === 0 && estimatedInput !== null,
     },
     {
       label: '목표 저축',
-      value: formatNullableWon(profile.goalMonthlyAmount),
-      isComplete: profile.goalMonthlyAmount !== null,
+      value: estimatedInput
+        ? formatWon(estimatedInput.goalMonthlyAmount)
+        : formatNullableWon(profile.goalMonthlyAmount),
+      isComplete:
+        profile.goalMonthlyAmount !== null || estimatedInput !== null,
+      isDefault:
+        profile.goalMonthlyAmount === null && estimatedInput !== null,
     },
     {
       label: '여유 생활비',
-      value: formatNullableWon(profile.flexibleSpending),
-      isComplete: profile.flexibleSpending !== null,
+      value: estimatedInput
+        ? formatWon(estimatedInput.flexibleSpending)
+        : formatNullableWon(profile.flexibleSpending),
+      isComplete:
+        profile.flexibleSpending !== null || estimatedInput !== null,
+      isDefault:
+        profile.flexibleSpending === null && estimatedInput !== null,
     },
     {
       label: '투자 조건',
       value:
-        profile.riskProfile && profile.investmentHorizon
+        estimatedInput
+          ? `${estimatedInput.riskProfile} · ${estimatedInput.investmentHorizon}`
+          : profile.riskProfile && profile.investmentHorizon
           ? `${profile.riskProfile} · ${profile.investmentHorizon}`
           : '미정',
       isComplete:
-        profile.riskProfile !== null && profile.investmentHorizon !== null,
+        (profile.riskProfile !== null && profile.investmentHorizon !== null) ||
+        estimatedInput !== null,
+      isDefault:
+        (profile.riskProfile === null || profile.investmentHorizon === null) &&
+        estimatedInput !== null,
     },
   ]
 }
@@ -1793,82 +1838,16 @@ function getNextAction(profile: FinancialProfile): NextAction {
       kind: 'salary',
       title: '월 실수령액을 알려주세요',
       description:
-        '정확한 금액을 몰라도 괜찮아요. 계산기로 예상 금액을 넣고 나중에 바꿀 수 있어요.',
+        '월급만 입력하면 생활비, 비상금, 목표, 여유 생활비는 기본 비율로 먼저 채워드려요.',
       primaryLabel: '실수령액 입력하기',
-    }
-  }
-  if (profile.essentialExpense === null) {
-    return {
-      kind: 'message',
-      title: '매달 꼭 나가는 돈을 알려주세요',
-      description:
-        '월세, 통신비, 교통비처럼 월급날 먼저 빼둘 돈을 한 문장으로 말하면 됩니다.',
-      primaryLabel: '고정비 예시 넣기',
-      draft: '월세 70만원, 통신비 7만원, 교통비 10만원을 매달 먼저 빼줘.',
-    }
-  }
-  if (profile.debtPayment === null) {
-    return {
-      kind: 'message',
-      title: '카드값이나 갚을 돈이 있나요?',
-      description:
-        '없으면 0원이라고 알려주세요. 부채가 있으면 투자보다 먼저 반영합니다.',
-      primaryLabel: '카드·부채 입력하기',
-      draft: '이번 달 카드값과 갚을 돈은 0원이야.',
-    }
-  }
-  if (
-    profile.currentEmergencyFund === null ||
-    profile.targetEmergencyFund === null
-  ) {
-    return {
-      kind: 'message',
-      title: '비상금 기준을 정해볼게요',
-      description:
-        '지금 모아둔 비상금과 목표 금액을 알면 안전망을 먼저 계산할 수 있어요.',
-      primaryLabel: '비상금 입력하기',
-      draft: '현재 비상금은 100만원이고 목표는 500만원이야.',
-    }
-  }
-  if (
-    profile.goalName.trim().length === 0 ||
-    profile.goalMonthlyAmount === null
-  ) {
-    return {
-      kind: 'message',
-      title: '가까운 목표가 있나요?',
-      description:
-        '여행, 이사, 노트북처럼 따로 모을 돈이 있으면 투자금과 섞이지 않게 분리해요.',
-      primaryLabel: '목표 입력하기',
-      draft: '여행 자금으로 매달 30만원씩 따로 모으고 싶어.',
-    }
-  }
-  if (profile.flexibleSpending === null) {
-    return {
-      kind: 'message',
-      title: '숨 쉴 여유 생활비를 정해요',
-      description:
-        '외식, 취미, 여행처럼 줄이기 어려운 돈을 정해야 계획이 오래 갑니다.',
-      primaryLabel: '여유 생활비 입력하기',
-      draft: '외식과 취미를 위해 여유 생활비는 월 40만원으로 잡고 싶어.',
-    }
-  }
-  if (profile.riskProfile === null || profile.investmentHorizon === null) {
-    return {
-      kind: 'message',
-      title: '투자 성향과 기간만 남았어요',
-      description:
-        '안정형·균형형·성장형 중 어느 쪽인지, 돈을 언제쯤 쓸지도 알려주세요.',
-      primaryLabel: '투자 조건 입력하기',
-      draft: '투자 성향은 균형형이고 투자 기간은 3년 이상으로 보고 있어.',
     }
   }
 
   return {
     kind: 'plan',
-    title: '월급 계획을 확인할 차례예요',
+    title: '기본 배분안을 확인해 보세요',
     description:
-      '입력한 정보로 생활비, 비상금, 목표 자금, 투자 가능 금액을 계산했어요.',
+      '대한민국 생활비 계획에서 자주 쓰는 기본 비율로 먼저 채웠어요. 다른 기준은 채팅으로 조율하면 됩니다.',
     primaryLabel: '계획 보러가기',
   }
 }
