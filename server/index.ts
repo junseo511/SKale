@@ -650,6 +650,8 @@ app.post('/api/payday/chat', async (request, response, next) => {
           'Be proactive: when enough information exists to produce a useful draft, produce the draft first and ask at most one follow-up only if it would materially change the next action.',
           'Do not run a long interrogation flow. Prefer using saved profile values, confirmed spending summaries, and reasonable clearly-labeled defaults over asking again.',
           'Always return nextActionRecommendation for the next best user action. It must be a concrete action the user can send next, not generic advice. The draft must be a complete Korean message that can be placed into the composer.',
+          'Vary nextActionRecommendation based on the current context. Do not repeatedly recommend only detailed budget planning. Rotate among concrete actions such as category spending distribution, filling missing detail uses, comparing actual card spending to the plan, emergency fund or debt priority checks, investment-candidate research, and source-backed portfolio review.',
+          'If the immediately completed task was detailed budget planning, recommend a next step such as investment candidate research, spending-plan comparison, or emergency fund priority review instead of another draft-refinement action.',
           'Record only budget-relevant lifestyle preferences as short Korean sentences in preferences.',
           'When the user names recurring payday destinations with explicit monthly amounts, structure them in customUses.',
           'Classify unavoidable recurring obligations as essential, named future savings as goal, and protected lifestyle spending as flexible.',
@@ -1270,10 +1272,12 @@ function createDeterministicDetailPlanResponse(
     missingData: [],
     appliedFacts: ['월급 계획의 배분 금액을 기준으로 세부 사용처 초안을 만들었어요.'],
     nextActionRecommendation: {
-      title: '초안을 반영하고 다듬을까요',
-      description: '방금 만든 세부 사용처 초안에서 과하거나 부족한 항목만 다시 조정할 수 있어요.',
-      primaryLabel: '초안 다듬기',
-      draft: '방금 만든 세부 사용처 초안을 기준으로 과하거나 부족한 항목을 찾아 조정안을 제안해줘.',
+      title: '투자 후보까지 이어볼까요',
+      description:
+        '세부 사용처를 반영한 뒤 남는 투자 여력을 기준으로 ETF와 종목 후보를 비교할 수 있어요.',
+      primaryLabel: '투자 후보 보기',
+      draft:
+        '이번 달 투자 가능 금액을 기준으로 ETF와 종목 후보를 비교해줘. 현재가와 재무 데이터는 출처가 있을 때만 사용해줘.',
     },
   }
 }
@@ -1302,11 +1306,24 @@ function createDefaultNextActionRecommendation(profile: FinancialProfile): {
     }
   }
 
+  if (profile.riskProfile !== null && profile.investmentHorizon !== null) {
+    return {
+      title: '투자 후보를 조사할까요',
+      description:
+        '저장된 투자 성향과 기간을 기준으로 후보를 비교하되, 최신 가격과 재무 데이터는 출처가 있을 때만 활용해요.',
+      primaryLabel: '종목 조사하기',
+      draft:
+        '저장된 월급 계획과 투자 성향, 투자 기간을 기준으로 ETF와 종목 후보를 비교해줘. 현재가와 재무 데이터는 출처가 있을 때만 사용해줘.',
+    }
+  }
+
   return {
-    title: '다음 월급 계획을 다듬을까요',
-    description: '저장된 세부 사용처와 월급 배분을 기준으로 과하거나 부족한 항목을 조정할 수 있어요.',
-    primaryLabel: '조정안 보기',
-    draft: '저장된 월급 계획에서 과하거나 부족한 항목을 찾아 조정안을 제안해줘.',
+    title: '실제 소비와 맞춰볼까요',
+    description:
+      '저장된 세부 사용처가 실제 카드 사용내역과 얼마나 맞는지 비교하면 조정할 곳이 선명해져요.',
+    primaryLabel: '사용내역 비교',
+    draft:
+      '최근 카드 내역을 기준으로 저장된 세부 사용처와 실제 지출이 어떻게 다른지 비교해줘.',
   }
 }
 

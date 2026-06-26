@@ -112,6 +112,12 @@ interface NextAction {
   draft?: string
 }
 
+interface SecondaryNextAction {
+  label: string
+  message: string
+  icon: ReactNode
+}
+
 interface SpendingTrendPoint {
   monthLabel: string
   totalExpense: number
@@ -235,21 +241,29 @@ function App(): ReactNode {
     : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.'
   const quickMessages = [
     {
+      label: '사용내역 분포를 분석해줘.',
       prompt: spendingSummaryPrompt,
       icon: <CalendarDays size={16} />,
     },
     {
-      prompt:
-        '월급날 월세 60만원을 따로 빼두고 싶어.',
+      label: '월세를 먼저 빼두고 싶어.',
+      prompt: '월급날 월세 60만원을 따로 빼두고 싶어.',
       icon: <WalletCards size={16} />,
     },
     {
+      label: '비상금·카드값 우선순위를 봐줘.',
+      prompt:
+        '이번 달은 투자보다 비상금과 카드값을 먼저 챙겨야 하는지 우선순위를 점검해줘.',
+      icon: <PiggyBank size={16} />,
+    },
+    {
+      label: '취향을 지키며 균형을 맞춰줘.',
       prompt: '외식과 여행은 줄이고 싶지 않은데, 다른 지출에서 균형을 맞춰줘.',
       icon: <MessageCircleMore size={16} />,
     },
     {
-      prompt:
-        'SK하이닉스 주식 종목을 분석해줘.',
+      label: '관심 종목을 분석해줘.',
+      prompt: 'SK하이닉스 주식 종목을 분석해줘.',
       icon: <TrendingUp size={16} />,
     },
   ]
@@ -576,6 +590,8 @@ function App(): ReactNode {
               {shouldShowNextAction && (
                 <NextActionPanel
                   action={recommendedAction}
+                  plan={plan}
+                  stockResearchRequest={stockResearchRequest}
                   targetMonth={effectiveTargetMonth}
                   onOpenSalaryCalculator={openSalaryCalculator}
                   onUseDraft={(message) => {
@@ -591,7 +607,7 @@ function App(): ReactNode {
             {shouldShowQuickMessages && (
               <div className={`suggestion-section ${isStarterOpen ? 'open' : 'collapsed'}`}>
                 <div className="starter-heading">
-                  <span>이렇게도 질문해 보세요</span>
+                  <span>이렇게도 시작해 보세요</span>
                   <button
                     type="button"
                     aria-expanded={isStarterOpen}
@@ -605,64 +621,69 @@ function App(): ReactNode {
                     <ChevronRight size={16} />
                   </button>
                 </div>
-                {isStarterOpen && (
+                <div
+                  className="starter-content"
+                  aria-hidden={!isStarterOpen}
+                >
                   <div className="quick-message-list" aria-label="추천 질문">
-                  <button
-                    className="starter-card calculator-quick-button"
-                    type="button"
-                    onClick={openSalaryCalculator}
-                  >
-                    <span>
-                      <Calculator size={16} />
-                    </span>
-                    <small>
-                      실수령액을 계산해줘.
-                    </small>
-                  </button>
-                  {quickMessages.map((message) => (
                     <button
-                      className="starter-card"
+                      className="starter-card calculator-quick-button"
                       type="button"
-                      key={message.prompt}
-                      onClick={() => setDraft(message.prompt)}
+                      disabled={!isStarterOpen}
+                      onClick={openSalaryCalculator}
                     >
-                      <span>{message.icon}</span>
-                      <small>{message.prompt}</small>
+                      <span>
+                        <Calculator size={16} />
+                      </span>
+                      <small>실수령액을 계산해줘.</small>
                     </button>
-                  ))}
-                  <div className="portfolio-suggestion-card">
-                    <p>
-                      이번 달 투자금으로 포트폴리오를 구성해줘.
-                    </p>
-                    <div className="market-selector" aria-label="투자 시장 선택">
-                      {(['한국', '미국', '한국·미국'] as PortfolioMarket[]).map(
-                        (market) => (
-                          <button
-                            className={
-                              portfolioMarket === market ? 'selected' : ''
-                            }
-                            type="button"
-                            key={market}
-                            onClick={() => setPortfolioMarket(market)}
-                          >
-                            {market === '한국·미국' ? '둘 다' : market}
-                          </button>
-                        ),
-                      )}
+                    {quickMessages.map((message) => (
+                      <button
+                        className="starter-card"
+                        type="button"
+                        disabled={!isStarterOpen}
+                        key={message.prompt}
+                        onClick={() => setDraft(message.prompt)}
+                      >
+                        <span>{message.icon}</span>
+                        <small>{message.label}</small>
+                      </button>
+                    ))}
+                    <div className="portfolio-suggestion-card">
+                      <p>
+                        이번 달 투자금으로 포트폴리오를 구성해줘.
+                      </p>
+                      <div className="market-selector" aria-label="투자 시장 선택">
+                        {(['한국', '미국', '한국·미국'] as PortfolioMarket[]).map(
+                          (market) => (
+                            <button
+                              className={
+                                portfolioMarket === market ? 'selected' : ''
+                              }
+                              type="button"
+                              disabled={!isStarterOpen}
+                              key={market}
+                              onClick={() => setPortfolioMarket(market)}
+                            >
+                              {market === '한국·미국' ? '둘 다' : market}
+                            </button>
+                          ),
+                        )}
+                      </div>
+                      <button
+                        className="portfolio-request-button"
+                        type="button"
+                        disabled={!isStarterOpen}
+                        onClick={() => setDraft(stockResearchRequest)}
+                      >
+                        {plan && plan.availableInvestmentAmount > 0
+                          ? '종목 조사하기'
+                          : '먼저 계산하기'}
+                        <ChevronRight size={16} />
+                      </button>
                     </div>
-                    <button
-                      className="portfolio-request-button"
-                      type="button"
-                      onClick={() => setDraft(stockResearchRequest)}
-                    >
-                      {plan && plan.availableInvestmentAmount > 0
-                        ? '종목 조사하기'
-                        : '먼저 계산하기'}
-                      <ChevronRight size={16} />
-                    </button>
                   </div>
-                  </div>
-                )}
+                </div>
               </div>
             )}
 
@@ -865,37 +886,25 @@ function App(): ReactNode {
 
 function NextActionPanel({
   action,
+  plan,
+  stockResearchRequest,
   targetMonth,
   onOpenSalaryCalculator,
   onUseDraft,
 }: {
   action: NextAction
+  plan: PaydayPlan | null
+  stockResearchRequest: string
   targetMonth: string | undefined
   onOpenSalaryCalculator: () => void
   onUseDraft: (message: string) => void
 }): ReactNode {
-  const monthLabel = targetMonth
-    ? `${Number(targetMonth.split('-')[1])}월`
-    : '사용내역'
-  const secondaryActions = [
-    {
-      label: `${monthLabel} 분포`,
-      message: targetMonth
-        ? `${Number(targetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해줘.`
-        : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.',
-      icon: <CalendarDays size={15} />,
-    },
-    {
-      label: '세부 계획',
-      message: '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워줘.',
-      icon: <WalletCards size={15} />,
-    },
-    {
-      label: '취향 남기기',
-      message: '외식과 여행 예산은 너무 줄이고 싶지 않아.',
-      icon: <MessageCircleMore size={15} />,
-    },
-  ]
+  const secondaryActions = createSecondaryNextActions({
+    targetMonth,
+    plan,
+    stockResearchRequest,
+    primaryDraft: action.draft,
+  })
 
   function runPrimaryAction(): void {
     if (action.kind === 'salary') {
@@ -945,6 +954,103 @@ function NextActionPanel({
       </div>
     </div>
   )
+}
+
+function createSecondaryNextActions({
+  targetMonth,
+  plan,
+  stockResearchRequest,
+  primaryDraft,
+}: {
+  targetMonth: string | undefined
+  plan: PaydayPlan | null
+  stockResearchRequest: string
+  primaryDraft: string | undefined
+}): SecondaryNextAction[] {
+  const monthLabel = targetMonth
+    ? `${Number(targetMonth.split('-')[1])}월`
+    : '사용내역'
+  const hasInvestmentRoom = plan !== null && plan.availableInvestmentAmount > 0
+  const needsEmergencyFund =
+    plan !== null &&
+    plan.input.currentEmergencyFund < plan.input.targetEmergencyFund
+  const hasCustomUses = plan !== null && plan.input.customUses.length > 0
+
+  const candidates: SecondaryNextAction[] = [
+    hasInvestmentRoom
+      ? {
+          label: '투자 후보',
+          message: stockResearchRequest,
+          icon: <TrendingUp size={15} />,
+        }
+      : {
+          label: '투자 여력',
+          message:
+            '이번 월급 계획에서 장기 투자금을 만들려면 어떤 항목을 조정해야 하는지 우선순위로 제안해줘.',
+          icon: <TrendingUp size={15} />,
+        },
+    needsEmergencyFund
+      ? {
+          label: '비상금 점검',
+          message:
+            '현재 비상금과 목표 비상금을 기준으로 이번 달 비상금, 생활비, 투자금의 우선순위를 다시 점검해줘.',
+          icon: <PiggyBank size={15} />,
+        }
+      : {
+          label: '포트폴리오',
+          message:
+            '이번 달 투자 가능 금액으로 ETF 중심 포트폴리오 초안을 만들어줘. 현재가와 최신 데이터는 출처가 있을 때만 사용해줘.',
+          icon: <TrendingUp size={15} />,
+        },
+    {
+      label: `${monthLabel} 분포`,
+      message: targetMonth
+        ? `${Number(targetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해줘.`
+        : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.',
+      icon: <CalendarDays size={15} />,
+    },
+    hasCustomUses
+      ? {
+          label: '사용처 보완',
+          message:
+            '저장된 세부 사용처를 기준으로 누락되었거나 금액이 과한 항목을 찾아 보완안을 제안해줘.',
+          icon: <WalletCards size={15} />,
+        }
+      : {
+          label: '세부 계획',
+          message:
+            '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워줘.',
+          icon: <WalletCards size={15} />,
+        },
+    {
+      label: '고정비 점검',
+      message:
+        '이번 월급 계획에서 줄이기 어려운 고정비와 조정 가능한 지출을 나눠서 개선안을 제안해줘.',
+      icon: <FileText size={15} />,
+    },
+    {
+      label: '취향 반영',
+      message:
+        '외식과 여행은 지키면서 다른 지출에서 균형을 맞추는 월급 조정안을 제안해줘.',
+      icon: <MessageCircleMore size={15} />,
+    },
+  ]
+
+  return uniqueNextActions(candidates, primaryDraft).slice(0, 3)
+}
+
+function uniqueNextActions(
+  actions: SecondaryNextAction[],
+  excludedMessage: string | undefined,
+): SecondaryNextAction[] {
+  const seen = new Set<string>()
+  return actions.filter((action) => {
+    if (action.message === excludedMessage || seen.has(action.message)) {
+      return false
+    }
+    seen.add(action.message)
+    return true
+  })
 }
 
 function MessageBubble({
@@ -2481,6 +2587,30 @@ function getNextAction(
   }
 
   if (plan) {
+    if (plan.availableInvestmentAmount > 0) {
+      return {
+        kind: 'message',
+        title: '투자 후보까지 이어볼까요',
+        description:
+          '월급에서 쓸 돈을 먼저 분리했으니, 남은 투자 가능 금액으로 후보를 비교해볼 수 있어요.',
+        primaryLabel: '투자 후보 보기',
+        draft:
+          '이번 달 투자 가능 금액을 기준으로 ETF와 종목 후보를 비교해줘. 현재가와 재무 데이터는 출처가 있을 때만 사용해줘.',
+      }
+    }
+
+    if (plan.input.customUses.length > 0) {
+      return {
+        kind: 'message',
+        title: '계획과 실제 소비를 맞춰볼까요',
+        description:
+          '저장된 세부 사용처와 카드 사용내역을 비교하면 부족하거나 과한 항목을 바로 찾을 수 있어요.',
+        primaryLabel: '사용내역 비교',
+        draft:
+          '최근 카드 내역을 기준으로 저장된 세부 사용처와 실제 지출이 어떻게 다른지 비교해줘.',
+      }
+    }
+
     return {
       kind: 'message',
       title: '세부 사용 계획을 같이 잡아볼까요',
