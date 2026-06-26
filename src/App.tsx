@@ -219,6 +219,7 @@ function App(): ReactNode {
   const nextAction = getNextAction(profile, plan)
   const hasUserMessage = messages.some((message) => message.role === 'user')
   const shouldShowQuickMessages =
+    completedProfileFields > 0 &&
     !hasUserMessage && pendingResponse === null && !isReplying
   const shouldShowNextAction = pendingResponse === null && !isReplying
   const effectiveTargetMonth =
@@ -613,7 +614,7 @@ function App(): ReactNode {
                   ))}
                   <div className="portfolio-suggestion-card">
                     <p>
-                      이번 달 투자금으로 포트폴리오를 구성해줘?
+                      이번 달 투자금으로 포트폴리오를 구성해줘.
                     </p>
                     <div className="market-selector" aria-label="투자 시장 선택">
                       {(['한국', '미국', '한국·미국'] as PortfolioMarket[]).map(
