@@ -468,7 +468,6 @@ app.use(express.json({ limit: '24mb' }))
 app.get('/api/health', (_request: Request, response: Response) => {
   response.json({
     status: 'ok',
-    aiEnabled: process.env.AI_ENABLED === 'true',
     aiConfigured: Boolean(process.env.AI_API_KEY),
   })
 })
@@ -882,13 +881,6 @@ app.listen(port, () => {
 })
 
 function createModelClient(): { client: GoogleGenAI; model: string } {
-  if (process.env.AI_ENABLED !== 'true') {
-    const error = new Error(
-      'AI 호출이 비활성화되어 있습니다. 명시적으로 AI_ENABLED=true를 설정해야 합니다.',
-    )
-    Object.assign(error, { status: 403 })
-    throw error
-  }
   const apiKey = process.env.AI_API_KEY
   if (!apiKey) {
     const error = new Error('AI_API_KEY가 설정되지 않아 AI 분석을 시작할 수 없습니다.')

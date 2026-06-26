@@ -80,6 +80,7 @@ function App(): ReactNode {
     return {
       ...EMPTY_FINANCIAL_PROFILE,
       ...savedProfile,
+      goalName: savedProfile?.goalName ?? EMPTY_FINANCIAL_PROFILE.goalName,
       preferences: savedProfile?.preferences ?? [],
       customUses: savedProfile?.customUses ?? [],
     }
