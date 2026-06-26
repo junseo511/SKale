@@ -9,7 +9,6 @@ import {
   ChevronRight,
   CircleAlert,
   FileText,
-  Globe2,
   ImagePlus,
   LockKeyhole,
   MessageCircleMore,
@@ -33,6 +32,20 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import { HttpPaydayConversationAgent } from './data/httpPaydayConversationAgent'
 import { LocalPaydayPlanRepository } from './data/localPaydayPlanRepository'
 import { LocalPaydayWorkspaceRepository } from './data/localPaydayWorkspaceRepository'
@@ -55,7 +68,12 @@ import {
   type NetSalaryInput,
   type SalaryUnit,
 } from './domain/netSalary'
-import { createPaydayPlan, type PaydayPlan } from './domain/paydayPlan'
+import {
+  createPaydayPlan,
+  type PaydayPlan,
+  type PortfolioAllocation,
+  type SalaryAllocation,
+} from './domain/paydayPlan'
 import './App.css'
 
 type PortfolioMarket = '한국' | '미국' | '한국·미국'
@@ -90,9 +108,24 @@ interface NextAction {
   draft?: string
 }
 
+interface SpendingTrendPoint {
+  monthLabel: string
+  totalExpense: number
+  essentialExpense: number
+  flexibleExpense: number
+}
+
 const MAX_IMAGE_COUNT = 4
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024
 const PROFILE_FIELD_COUNT = 1
+const CHART_COLORS = [
+  '#ea002c',
+  '#ff7a00',
+  '#a43c2d',
+  '#f05267',
+  '#ffb057',
+  '#6f6466',
+]
 const agent = new HttpPaydayConversationAgent({
   baseUrl: import.meta.env.VITE_API_BASE_URL,
 })
@@ -156,31 +189,28 @@ function App(): ReactNode {
     messages.some((message) => message.role === 'user')
   const quickMessages = [
     {
-      label: `${Number(targetMonth.split('-')[1])}월 사용내역 정리`,
-      draft: `${Number(targetMonth.split('-')[1])}월의 사용 내역을 정리하고 싶어.`,
-      icon: <MessageCircleMore size={16} />,
+      prompt: `${Number(targetMonth.split('-')[1])}월 카드 내역을 기준으로 필수지출과 선택지출을 나눠줘.`,
+      icon: <CalendarDays size={16} />,
     },
     {
-      label: '월급날 먼저 뺄 돈 정하기',
-      draft:
-        '월급날 월세 70만원, 부모님 용돈 20만원, 운동비 10만원을 먼저 따로 빼둘래.',
+      prompt:
+        '월급날 월세 70만원, 부모님 용돈 20만원, 운동비 10만원을 먼저 빼두고 싶어.',
       icon: <WalletCards size={16} />,
     },
     {
-      label: '줄이고 싶지 않은 소비 남기기',
-      draft: '외식과 여행 예산은 너무 줄이고 싶지 않아.',
+      prompt: '외식과 여행은 너무 줄이고 싶지 않은데, 다른 지출에서 균형을 맞춰줘.',
       icon: <MessageCircleMore size={16} />,
     },
     {
-      label: 'SK하이닉스 종목 분석',
-      draft: 'SK하이닉스 종목을 장기 투자 기준으로 점검해줘.',
+      prompt:
+        'SK하이닉스를 장기 투자 후보로 볼 때 무엇을 확인해야 하는지 체크리스트로 정리해줘.',
       icon: <TrendingUp size={16} />,
     },
   ]
-  const portfolioRequest =
+  const stockResearchRequest =
     plan && plan.availableInvestmentAmount > 0
-      ? `${formatWon(plan.availableInvestmentAmount)}으로 ${portfolioMarket} 주식 포트폴리오를 구성해줘. 종목이나 ETF별 금액과 비중, 구성 이유, 주요 위험을 함께 알려줘.`
-      : `${portfolioMarket} 주식 포트폴리오를 구성하고 싶어. 내 상황에서 투자할 수 있는 금액과 투자 성향부터 확인해줘.`
+      ? `${formatWon(plan.availableInvestmentAmount)}으로 ${portfolioMarket} 시장의 최신 공개자료 기반 투자 후보를 조사하고 싶어. 현재가, 최근 실적, 밸류에이션, 주요 뉴스는 출처와 기준일이 확인되는 경우에만 쓰고, 확인되지 않으면 모른다고 말해줘. 매수 지시가 아니라 ETF와 개별 종목 후보를 역할별로 비교하고, 각 후보의 비중 초안·선정 근거·주요 위험·추가 확인 자료를 표로 정리해줘.`
+      : `${portfolioMarket} 시장의 최신 공개자료 기반 투자 후보를 조사하고 싶어. 먼저 내 상황에서 투자 가능한 금액과 투자 성향을 확인한 뒤, 현재가와 재무 데이터는 출처가 있을 때만 후보 비교에 써줘.`
 
   async function sendMessage(): Promise<void> {
     const normalizedDraft = draft.trim()
@@ -517,31 +547,38 @@ function App(): ReactNode {
 
             {shouldShowQuickMessages && (
               <div className="suggestion-section">
-                <span>바로 입력하기</span>
+                <div className="starter-heading">
+                  <span>이렇게 시작해 보세요</span>
+                  <p>누르면 입력창에 문장이 채워져요.</p>
+                </div>
                 <div className="quick-message-list" aria-label="추천 질문">
                   <button
-                    className="calculator-quick-button"
+                    className="starter-card calculator-quick-button"
                     type="button"
                     onClick={openSalaryCalculator}
                   >
-                    <Calculator size={16} />
-                    실수령액 입력하기
+                    <span>
+                      <Calculator size={16} />
+                    </span>
+                    <small>
+                      실수령액을 모르겠어. 연봉으로 계산해서 월급 계획을 시작할래.
+                    </small>
                   </button>
                   {quickMessages.map((message) => (
                     <button
+                      className="starter-card"
                       type="button"
-                      key={message.label}
-                      onClick={() => setDraft(message.draft)}
+                      key={message.prompt}
+                      onClick={() => setDraft(message.prompt)}
                     >
-                      {message.icon}
-                      {message.label}
+                      <span>{message.icon}</span>
+                      <small>{message.prompt}</small>
                     </button>
                   ))}
                   <div className="portfolio-suggestion-card">
-                    <div>
-                      <Globe2 size={17} />
-                      <span>주식 포트폴리오 만들기</span>
-                    </div>
+                    <p>
+                      “이번 달 투자금으로 어떤 ETF와 종목 후보를 비교해볼까?”
+                    </p>
                     <div className="market-selector" aria-label="투자 시장 선택">
                       {(['한국', '미국', '한국·미국'] as PortfolioMarket[]).map(
                         (market) => (
@@ -561,11 +598,11 @@ function App(): ReactNode {
                     <button
                       className="portfolio-request-button"
                       type="button"
-                      onClick={() => setDraft(portfolioRequest)}
+                      onClick={() => setDraft(stockResearchRequest)}
                     >
                       {plan && plan.availableInvestmentAmount > 0
-                        ? `${formatWon(plan.availableInvestmentAmount)}으로 구성 요청`
-                        : '구성 요청하기'}
+                        ? '후보 보기'
+                        : '먼저 계산하기'}
                       <ChevronRight size={16} />
                     </button>
                   </div>
@@ -698,6 +735,13 @@ function App(): ReactNode {
           plan={plan}
           isSaved={isPlanSaved}
           onSave={savePlan}
+          stockResearchRequest={stockResearchRequest}
+          onUseDraft={(message) => {
+            setDraft(message)
+            requestAnimationFrame(() =>
+              composerTextAreaReference.current?.focus(),
+            )
+          }}
         />
       </main>
 
@@ -1294,6 +1338,7 @@ function MonthlyHistoryCard({
     Math.max(sortedSummaries.length - 1, 0),
   )
   const selectedSummary = sortedSummaries[safeSelectedIndex]
+  const spendingTrend = createSpendingTrend(sortedSummaries)
 
   return (
     <section className="context-card history-card">
@@ -1362,6 +1407,9 @@ function MonthlyHistoryCard({
                 )}
               />
             </div>
+            {spendingTrend.length >= 2 && (
+              <SpendingTrendChart summaries={spendingTrend} />
+            )}
             <p>{selectedSummary.insight}</p>
             {selectedSummary.notableCategories.length > 0 && (
               <div className="history-categories">
@@ -1786,10 +1834,14 @@ function PlanSection({
   plan,
   isSaved,
   onSave,
+  stockResearchRequest,
+  onUseDraft,
 }: {
   plan: PaydayPlan | null
   isSaved: boolean
   onSave: () => void
+  stockResearchRequest: string
+  onUseDraft: (message: string) => void
 }): ReactNode {
   return (
     <section className="plan-section" id="payday-plan">
@@ -1815,6 +1867,7 @@ function PlanSection({
           </div>
           <div className="plan-content">
             <div className="allocation-summary">
+              <AllocationChart allocations={plan.allocations} />
               {plan.allocations.map((allocation) => (
                 <article key={allocation.role}>
                   <span>{String(allocation.priority).padStart(2, '0')}</span>
@@ -1842,16 +1895,32 @@ function PlanSection({
                 {plan.input.riskProfile} · {plan.input.investmentHorizon}
               </h3>
               {plan.portfolio.length > 0 ? (
-                <div>
-                  {plan.portfolio.map((allocation, index) => (
-                    <article key={allocation.label}>
-                      <i className={`portfolio-color color-${index + 1}`} />
-                      <span>{allocation.label}</span>
-                      <strong>{allocation.percentage}%</strong>
-                      <b>{formatWon(allocation.amount)}</b>
-                    </article>
-                  ))}
-                </div>
+                <>
+                  <PortfolioDonutChart portfolio={plan.portfolio} />
+                  <div className="stock-research-callout">
+                    <strong>종목 후보까지 보고 싶다면</strong>
+                    <p>
+                      이번 달 투자금에 맞춰 ETF와 관심 종목을 비교해 볼게요.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => onUseDraft(stockResearchRequest)}
+                    >
+                      <TrendingUp size={15} />
+                      최신 후보 조사 요청
+                    </button>
+                  </div>
+                  <div>
+                    {plan.portfolio.map((allocation, index) => (
+                      <article key={allocation.label}>
+                        <i className={`portfolio-color color-${index + 1}`} />
+                        <span>{allocation.label}</span>
+                        <strong>{allocation.percentage}%</strong>
+                        <b>{formatWon(allocation.amount)}</b>
+                      </article>
+                    ))}
+                  </div>
+                </>
               ) : (
                 <p>이번 달은 투자보다 비상금을 먼저 채우는 편이 좋아요.</p>
               )}
@@ -1876,6 +1945,179 @@ function PlanSection({
         </div>
       )}
     </section>
+  )
+}
+
+function AllocationChart({
+  allocations,
+}: {
+  allocations: SalaryAllocation[]
+}): ReactNode {
+  const chartData = allocations
+    .filter((allocation) => allocation.amount > 0)
+    .map((allocation, index) => ({
+      label: allocation.label,
+      amount: allocation.amount,
+      fill: CHART_COLORS[index % CHART_COLORS.length],
+    }))
+
+  if (chartData.length === 0) {
+    return null
+  }
+
+  return (
+    <figure
+      className="allocation-chart"
+      aria-label="월급 배분 금액 막대그래프"
+    >
+      <figcaption>
+        <span>월급 배분 한눈에 보기</span>
+        <strong>큰 항목부터 조정해 보세요</strong>
+      </figcaption>
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart
+          data={chartData}
+          layout="vertical"
+          margin={{ top: 4, right: 12, bottom: 4, left: 0 }}
+        >
+          <CartesianGrid horizontal={false} stroke="#f0e8e9" />
+          <XAxis
+            type="number"
+            tickFormatter={formatCompactWon}
+            tickLine={false}
+            axisLine={false}
+            fontSize={11}
+          />
+          <YAxis
+            dataKey="label"
+            type="category"
+            tickLine={false}
+            axisLine={false}
+            width={82}
+            fontSize={11}
+          />
+          <Tooltip
+            cursor={{ fill: '#fff1f4' }}
+            formatter={(value) => [formatWon(Number(value)), '금액']}
+          />
+          <Bar dataKey="amount" radius={[0, 8, 8, 0]} barSize={18}>
+            {chartData.map((entry) => (
+              <Cell key={entry.label} fill={entry.fill} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </figure>
+  )
+}
+
+function PortfolioDonutChart({
+  portfolio,
+}: {
+  portfolio: PortfolioAllocation[]
+}): ReactNode {
+  const chartData = portfolio.map((allocation, index) => ({
+    label: allocation.label,
+    percentage: allocation.percentage,
+    amount: allocation.amount,
+    fill: CHART_COLORS[index % CHART_COLORS.length],
+  }))
+
+  return (
+    <figure className="portfolio-chart" aria-label="투자금 비중 도넛 차트">
+      <ResponsiveContainer width="100%" height={180}>
+        <PieChart>
+          <Pie
+            data={chartData}
+            dataKey="percentage"
+            nameKey="label"
+            innerRadius={48}
+            outerRadius={72}
+            paddingAngle={3}
+            stroke="none"
+          >
+            {chartData.map((entry) => (
+              <Cell key={entry.label} fill={entry.fill} />
+            ))}
+          </Pie>
+          <Tooltip
+            formatter={(value, _name, item) => {
+              const payload = item.payload as { amount?: number }
+              return [
+                `${Number(value).toFixed(0)}% · ${formatWon(payload.amount ?? 0)}`,
+                '비중',
+              ]
+            }}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+      <figcaption>
+        <span>자산군 비중</span>
+        <strong>{portfolio.map((item) => `${item.label} ${item.percentage}%`).join(' · ')}</strong>
+      </figcaption>
+    </figure>
+  )
+}
+
+function SpendingTrendChart({
+  summaries,
+}: {
+  summaries: SpendingTrendPoint[]
+}): ReactNode {
+  return (
+    <figure className="spending-trend-chart" aria-label="월별 소비 추이 그래프">
+      <figcaption>
+        <span>최근 흐름</span>
+        <strong>총소비와 지출 성격을 같이 봐요</strong>
+      </figcaption>
+      <ResponsiveContainer width="100%" height={150}>
+        <LineChart data={summaries} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
+          <CartesianGrid vertical={false} stroke="#f0e8e9" />
+          <XAxis
+            dataKey="monthLabel"
+            tickLine={false}
+            axisLine={false}
+            fontSize={10}
+          />
+          <YAxis
+            width={42}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={formatCompactWon}
+            fontSize={10}
+          />
+          <Tooltip
+            formatter={(value) => [formatWon(Number(value)), '금액']}
+            labelFormatter={(label) => `${label} 사용 내역`}
+          />
+          <Line
+            type="monotone"
+            dataKey="totalExpense"
+            name="총소비"
+            stroke="#ea002c"
+            strokeWidth={2.5}
+            dot={{ r: 3 }}
+            activeDot={{ r: 5 }}
+          />
+          <Line
+            type="monotone"
+            dataKey="essentialExpense"
+            name="필수지출"
+            stroke="#ff7a00"
+            strokeWidth={2}
+            dot={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="flexibleExpense"
+            name="선택지출"
+            stroke="#8f8083"
+            strokeWidth={2}
+            dot={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </figure>
   )
 }
 
@@ -2179,8 +2421,21 @@ function formatMonth(value: string): string {
   return `${year}년 ${Number(month)}월`
 }
 
+function formatShortMonth(value: string): string {
+  const [, month] = value.split('-')
+  return `${Number(month)}월`
+}
+
 function formatWon(value: number): string {
   return `${Math.round(value).toLocaleString()}원`
+}
+
+function formatCompactWon(value: number): string {
+  if (value >= 10000) {
+    return `${Math.round(value / 10000).toLocaleString()}만`
+  }
+
+  return `${Math.round(value).toLocaleString()}`
 }
 
 function parseMoney(value: string): number {
@@ -2211,6 +2466,21 @@ function normalizeConversationMessages(
       ? { ...message, content: INITIAL_AGENT_MESSAGE.content }
       : message,
   )
+}
+
+function createSpendingTrend(
+  summaries: MonthlySpendingSummary[],
+): SpendingTrendPoint[] {
+  return summaries
+    .filter((summary) => summary.totalExpense !== null)
+    .slice(0, 6)
+    .reverse()
+    .map((summary) => ({
+      monthLabel: formatShortMonth(summary.month),
+      totalExpense: summary.totalExpense ?? 0,
+      essentialExpense: summary.essentialExpense ?? 0,
+      flexibleExpense: summary.flexibleExpense ?? 0,
+    }))
 }
 
 export default App

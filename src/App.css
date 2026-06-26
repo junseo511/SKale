@@ -98,14 +98,17 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .response-context ul { display: grid; margin: 7px 0 0; padding-left: 17px; color: #7b7072; font-size: 12px; line-height: 1.5; gap: 3px; }
 
 .suggestion-section { padding: 14px 20px 0; }
-.suggestion-section > span { color: #6e6366; font-size: 13px; font-weight: 750; }
+.starter-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.starter-heading span { color: #4f4548; font-size: 14px; font-weight: 850; }
+.starter-heading p { margin: 0; color: #9a8f91; font-size: 12px; }
 .quick-message-list { display: grid; margin-top: 10px; align-items: start; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.quick-message-list button { display: flex; min-height: 42px; align-items: center; gap: 8px; padding: 9px 11px; border: 1px solid #e4dcdd; border-radius: 11px; color: #62585b; background: white; font-size: 12px; line-height: 1.35; text-align: left; cursor: pointer; }
-.quick-message-list button svg { flex: 0 0 auto; color: var(--sk-red); }
-.quick-message-list .calculator-quick-button { border-color: #ffc2cd; color: #d90029; background: #fff3f5; font-weight: 750; }
-.portfolio-suggestion-card { display: flex; min-height: 96px; padding: 11px; border: 1px solid #e4dcdd; border-radius: 12px; background: white; flex-direction: column; gap: 8px; }
-.portfolio-suggestion-card > div:first-child { display: flex; align-items: center; gap: 8px; color: #62585b; font-size: 13px; font-weight: 750; }
-.portfolio-suggestion-card > div:first-child svg { color: var(--sk-red); }
+.quick-message-list .starter-card { display: grid; min-height: 74px; align-items: center; padding: 13px 14px; border: 1px solid #e4dcdd; border-radius: 12px; color: #62585b; background: white; text-align: left; cursor: pointer; grid-template-columns: 32px 1fr; gap: 10px; }
+.starter-card > span { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 9px; color: var(--sk-red); background: #fff1f4; }
+.starter-card small { display: -webkit-box; overflow: hidden; color: #51494b; font-size: 13px; line-height: 1.5; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.quick-message-list .calculator-quick-button { border-color: #ffc2cd; color: #d90029; background: #fff7f8; font-weight: 750; }
+.quick-message-list .calculator-quick-button span { color: white; background: var(--sk-red); }
+.portfolio-suggestion-card { display: flex; min-height: 116px; padding: 13px; border: 1px solid #e4dcdd; border-radius: 12px; background: white; flex-direction: column; gap: 8px; }
+.portfolio-suggestion-card > p { margin: 0; color: #51494b; font-size: 13px; line-height: 1.5; }
 .market-selector { display: grid; padding: 3px; border-radius: 9px; background: #f2eded; grid-template-columns: repeat(3, 1fr); gap: 3px; }
 .market-selector button { min-height: 30px; padding: 0 7px; border: 0; border-radius: 7px; color: #786e70; background: transparent; font-size: 12px; text-align: center; justify-content: center; }
 .market-selector button.selected { color: #d90029; background: white; box-shadow: 0 2px 8px rgba(234, 0, 44, .08); font-weight: 800; }
@@ -178,6 +181,10 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .history-amounts > div { display: flex; padding: 8px; border-radius: 9px; background: white; flex-direction: column; gap: 4px; }
 .history-amounts span { color: var(--muted); font-size: 11px; }
 .history-amounts strong { font-size: 13px; }
+.spending-trend-chart { min-width: 0; margin: 12px 0 2px; padding: 11px 8px 7px; border: 1px solid #eee6e7; border-radius: 12px; background: white; }
+.spending-trend-chart figcaption, .allocation-chart figcaption, .portfolio-chart figcaption { display: flex; margin: 0 0 8px; align-items: baseline; justify-content: space-between; gap: 10px; }
+.spending-trend-chart figcaption span, .allocation-chart figcaption span, .portfolio-chart figcaption span { color: var(--sk-red); font-size: 11px; font-weight: 850; }
+.spending-trend-chart figcaption strong, .allocation-chart figcaption strong, .portfolio-chart figcaption strong { color: #5f5558; font-size: 11px; font-weight: 750; text-align: right; }
 .history-categories { margin: 0 0 8px; }
 .history-review-panel { display: grid; margin: 11px 0; padding: 12px; border: 1px solid #f0d1a8; border-radius: 12px; background: #fff9ef; gap: 10px; }
 .history-review-heading { display: flex; align-items: flex-start; gap: 8px; color: #7c4a18; }
@@ -215,6 +222,7 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .plan-hero > div:last-child strong { color: #fff1d8; font-size: 27px; }
 .plan-content { display: grid; padding: 28px; grid-template-columns: 1.3fr .7fr; gap: 28px; }
 .allocation-summary { display: flex; flex-direction: column; }
+.allocation-chart { min-width: 0; margin: 0 0 14px; padding: 16px 14px 10px; border: 1px solid #eee6e7; border-radius: 16px; background: #fffafa; }
 .allocation-summary article { display: grid; min-height: 65px; padding: 10px 4px; border-bottom: 1px solid #eee8e8; align-items: center; grid-template-columns: 30px 1fr auto; gap: 10px; }
 .allocation-summary article > span { color: #b5abad; font-size: 11px; font-weight: 800; }
 .allocation-summary article div { min-width: 0; }
@@ -228,6 +236,13 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .portfolio-summary > span { color: var(--sk-red); font-size: 11px; font-weight: 800; }
 .portfolio-summary > h3 { margin: 6px 0 15px; font-size: 18px; }
 .portfolio-summary > div { display: flex; flex-direction: column; gap: 7px; }
+.portfolio-chart { min-width: 0; margin: 0 0 12px; padding: 8px 8px 11px; border-radius: 14px; background: white; }
+.portfolio-chart figcaption { margin: 2px 4px 0; flex-direction: column; gap: 4px; }
+.portfolio-chart figcaption strong { text-align: left; line-height: 1.4; }
+.stock-research-callout { display: grid; margin-bottom: 12px; padding: 13px; border: 1px solid #ffd2d8; border-radius: 13px; background: #fff7f8; gap: 7px; }
+.stock-research-callout strong { color: #4c2025; font-size: 13px; }
+.stock-research-callout p { margin: 0; color: #74686b; font-size: 12px; line-height: 1.45; }
+.stock-research-callout button { display: inline-flex; min-height: 36px; width: fit-content; align-items: center; justify-content: center; gap: 5px; padding: 0 11px; border: 0; border-radius: 9px; color: white; background: var(--sk-red); font-size: 12px; font-weight: 800; cursor: pointer; }
 .portfolio-summary article { display: grid; padding: 11px; border-radius: 10px; background: white; align-items: center; grid-template-columns: 8px 1fr auto; gap: 5px 7px; }
 .portfolio-color { width: 7px; height: 7px; border-radius: 2px; }
 .color-1 { background: #ff9a25; }
