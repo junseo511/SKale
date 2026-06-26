@@ -85,6 +85,13 @@ export interface PaydayConversationRequest {
   recentMessages: Array<Pick<ConversationMessage, 'role' | 'content'>>
 }
 
+export interface NextActionRecommendation {
+  title: string
+  description: string
+  primaryLabel: string
+  draft: string
+}
+
 const financialProfilePatchSchema = z
   .object({
     monthlySalary: z.number().nonnegative().optional(),
@@ -150,6 +157,14 @@ export const paydayConversationResponseSchema = z
     monthlySpendingProposal: monthlySpendingProposalSchema.optional(),
     missingData: z.array(z.string().trim().min(1)).max(8),
     appliedFacts: z.array(z.string().trim().min(1)).max(10),
+    nextActionRecommendation: z
+      .object({
+        title: z.string().trim().min(1).max(80),
+        description: z.string().trim().min(1).max(200),
+        primaryLabel: z.string().trim().min(1).max(40),
+        draft: z.string().trim().min(1).max(500),
+      })
+      .strict(),
   })
   .strict()
 

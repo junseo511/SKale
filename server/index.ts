@@ -175,6 +175,14 @@ const paydayConversationModelResponseValidationSchema = z
       .nullable(),
     missingData: z.array(z.string().trim().min(1)).max(8),
     appliedFacts: z.array(z.string().trim().min(1)).max(10),
+    nextActionRecommendation: z
+      .object({
+        title: z.string().trim().min(1).max(80),
+        description: z.string().trim().min(1).max(200),
+        primaryLabel: z.string().trim().min(1).max(40),
+        draft: z.string().trim().min(1).max(500),
+      })
+      .strict(),
   })
   .strict()
 
@@ -485,6 +493,17 @@ const paydayConversationResponseSchema = {
       items: { type: 'string' },
       maxItems: 10,
     },
+    nextActionRecommendation: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        title: { type: 'string' },
+        description: { type: 'string' },
+        primaryLabel: { type: 'string' },
+        draft: { type: 'string' },
+      },
+      required: ['title', 'description', 'primaryLabel', 'draft'],
+    },
   },
   required: [
     'reply',
@@ -492,6 +511,7 @@ const paydayConversationResponseSchema = {
     'monthlySpendingProposal',
     'missingData',
     'appliedFacts',
+    'nextActionRecommendation',
   ],
 } as const
 
@@ -574,6 +594,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
         monthlySpendingProposal: undefined,
         missingData: [],
         appliedFacts: [],
+        nextActionRecommendation: createDefaultNextActionRecommendation(profile),
       })
       return
     }
@@ -628,6 +649,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
           'Only monthlySalary is required before the application can create a first salary plan. Essential expense, debt, emergency fund, goals, flexible spending, risk profile, and investment horizon can stay null unless the user explicitly provides or changes them; the application will fill a clearly labeled default draft for those fields.',
           'Be proactive: when enough information exists to produce a useful draft, produce the draft first and ask at most one follow-up only if it would materially change the next action.',
           'Do not run a long interrogation flow. Prefer using saved profile values, confirmed spending summaries, and reasonable clearly-labeled defaults over asking again.',
+          'Always return nextActionRecommendation for the next best user action. It must be a concrete action the user can send next, not generic advice. The draft must be a complete Korean message that can be placed into the composer.',
           'Record only budget-relevant lifestyle preferences as short Korean sentences in preferences.',
           'When the user names recurring payday destinations with explicit monthly amounts, structure them in customUses.',
           'Classify unavoidable recurring obligations as essential, named future savings as goal, and protected lifestyle spending as flexible.',
@@ -706,6 +728,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
       profilePatch,
       missingData: visibleMissingData,
       appliedFacts: visibleAppliedFacts,
+      nextActionRecommendation: result.nextActionRecommendation,
       monthlySpendingProposal:
         result.monthlySpendingProposal ?? undefined,
     })
@@ -1140,6 +1163,12 @@ function createFallbackPaydayResponse(message: string): {
   monthlySpendingProposal: undefined
   missingData: string[]
   appliedFacts: string[]
+  nextActionRecommendation: {
+    title: string
+    description: string
+    primaryLabel: string
+    draft: string
+  }
 } {
   const hasSpendingSummaryRequest =
     message.includes('카드') ||
@@ -1155,6 +1184,12 @@ function createFallbackPaydayResponse(message: string): {
       monthlySpendingProposal: undefined,
       missingData: ['카드 내역 텍스트 또는 사진'],
       appliedFacts: [],
+      nextActionRecommendation: {
+        title: '사용내역을 분석해볼까요',
+        description: '카드 내역을 보내주시면 자료 월을 판단하고 카테고리별 지출 분포로 정리해요.',
+        primaryLabel: '사용내역 분석하기',
+        draft: '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.',
+      },
     }
   }
 
@@ -1165,6 +1200,12 @@ function createFallbackPaydayResponse(message: string): {
     monthlySpendingProposal: undefined,
     missingData: [],
     appliedFacts: [],
+    nextActionRecommendation: {
+      title: '월급 계획을 이어갈까요',
+      description: '월급, 소비, 목표 중 지금 알고 있는 내용을 바탕으로 다음 초안을 만들 수 있어요.',
+      primaryLabel: '계획 이어가기',
+      draft: '지금까지 저장된 정보를 기준으로 다음에 조정하면 좋은 월급 계획을 제안해줘.',
+    },
   }
 }
 
@@ -1177,6 +1218,12 @@ function createDeterministicDetailPlanResponse(
   monthlySpendingProposal: undefined
   missingData: string[]
   appliedFacts: string[]
+  nextActionRecommendation: {
+    title: string
+    description: string
+    primaryLabel: string
+    draft: string
+  }
 } | null {
   if (!isDetailPlanningRequest(message)) {
     return null
@@ -1190,6 +1237,7 @@ function createDeterministicDetailPlanResponse(
       monthlySpendingProposal: undefined,
       missingData: ['월 실수령액'],
       appliedFacts: [],
+      nextActionRecommendation: createDefaultNextActionRecommendation(profile),
     }
   }
 
@@ -1202,6 +1250,12 @@ function createDeterministicDetailPlanResponse(
       monthlySpendingProposal: undefined,
       missingData: [],
       appliedFacts: ['등록된 세부 사용처가 이미 있어요.'],
+      nextActionRecommendation: {
+        title: '세부 항목을 조정할까요',
+        description: '이미 등록된 사용처 중 마음에 안 드는 항목만 말하면 그 부분만 다시 배분해요.',
+        primaryLabel: '세부 항목 조정하기',
+        draft: '등록된 세부 사용처 중에서 과하거나 부족한 항목을 찾아서 조정안을 제안해줘.',
+      },
     }
   }
 
@@ -1215,6 +1269,44 @@ function createDeterministicDetailPlanResponse(
     monthlySpendingProposal: undefined,
     missingData: [],
     appliedFacts: ['월급 계획의 배분 금액을 기준으로 세부 사용처 초안을 만들었어요.'],
+    nextActionRecommendation: {
+      title: '초안을 반영하고 다듬을까요',
+      description: '방금 만든 세부 사용처 초안에서 과하거나 부족한 항목만 다시 조정할 수 있어요.',
+      primaryLabel: '초안 다듬기',
+      draft: '방금 만든 세부 사용처 초안을 기준으로 과하거나 부족한 항목을 찾아 조정안을 제안해줘.',
+    },
+  }
+}
+
+function createDefaultNextActionRecommendation(profile: FinancialProfile): {
+  title: string
+  description: string
+  primaryLabel: string
+  draft: string
+} {
+  if (profile.monthlySalary === null) {
+    return {
+      title: '월 실수령액부터 입력할까요',
+      description: '월급 기준이 있어야 생활비, 목표 자금, 투자금 초안을 바로 계산할 수 있어요.',
+      primaryLabel: '월급 알려주기',
+      draft: '월 실수령액을 입력해서 월급 계획을 시작할게.',
+    }
+  }
+
+  if (profile.customUses.length === 0) {
+    return {
+      title: '세부 사용처를 잡아볼까요',
+      description: '이미 계산된 큰 범주를 실제 지출 항목으로 나누면 계획을 바로 실행하기 쉬워져요.',
+      primaryLabel: '세부 계획하기',
+      draft: '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워줘.',
+    }
+  }
+
+  return {
+    title: '다음 월급 계획을 다듬을까요',
+    description: '저장된 세부 사용처와 월급 배분을 기준으로 과하거나 부족한 항목을 조정할 수 있어요.',
+    primaryLabel: '조정안 보기',
+    draft: '저장된 월급 계획에서 과하거나 부족한 항목을 찾아 조정안을 제안해줘.',
   }
 }
 

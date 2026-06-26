@@ -112,6 +112,9 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .starter-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .starter-heading span { color: #4f4548; font-size: 14px; font-weight: 850; }
 .starter-heading p { margin: 0; color: #9a8f91; font-size: 12px; }
+.starter-heading button { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 1px solid #eadfe1; border-radius: 9px; color: var(--sk-red); background: white; cursor: pointer; transition: 160ms ease; }
+.suggestion-section.open .starter-heading button { transform: rotate(90deg); }
+.suggestion-section.collapsed { padding-bottom: 2px; }
 .quick-message-list { display: grid; margin-top: 10px; align-items: stretch; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .quick-message-list .starter-card { display: grid; min-height: 74px; align-items: center; padding: 13px 14px; border: 1px solid #e4dcdd; border-radius: 12px; color: #62585b; background: white; text-align: left; cursor: pointer; grid-template-columns: 32px 1fr; gap: 10px; }
 .starter-card > span { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 9px; color: var(--sk-red); background: #fff1f4; }

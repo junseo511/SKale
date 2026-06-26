@@ -59,6 +59,7 @@ import {
   type FinancialProfile,
   type FinancialProfilePatch,
   type MonthlySpendingSummary,
+  type NextActionRecommendation,
   type PaydayConversationResponse,
   type SpendingCategoryAmount,
 } from './domain/paydayConversation'
@@ -163,6 +164,8 @@ function App(): ReactNode {
   const [attachments, setAttachments] = useState<ConversationAttachment[]>([])
   const [pendingResponse, setPendingResponse] =
     useState<PaydayConversationResponse | null>(null)
+  const [latestRecommendedAction, setLatestRecommendedAction] =
+    useState<NextAction | null>(null)
   const [isReplying, setIsReplying] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [isSalaryCalculatorOpen, setIsSalaryCalculatorOpen] =
@@ -171,6 +174,7 @@ function App(): ReactNode {
     useState<EditableProfileField | null>(null)
   const [portfolioMarket, setPortfolioMarket] =
     useState<PortfolioMarket>('미국')
+  const [isStarterOpen, setIsStarterOpen] = useState(true)
   const abortControllerReference = useRef<AbortController | null>(null)
   const scrollPositionBeforeModalReference = useRef(0)
   const composerTextAreaReference = useRef<HTMLTextAreaElement | null>(null)
@@ -221,10 +225,9 @@ function App(): ReactNode {
   const completedProfileFields = countCompletedProfileFields(profile)
   const nextAction = getNextAction(profile, plan)
   const hasUserMessage = messages.some((message) => message.role === 'user')
-  const shouldShowQuickMessages =
-    completedProfileFields > 0 &&
-    !hasUserMessage && pendingResponse === null && !isReplying
-  const shouldShowNextAction = pendingResponse === null && !isReplying
+  const recommendedAction = latestRecommendedAction ?? nextAction
+  const shouldShowQuickMessages = completedProfileFields > 0
+  const shouldShowNextAction = !isReplying
   const effectiveTargetMonth =
     spendingMonthMode === 'manual' ? targetMonth : undefined
   const spendingSummaryPrompt = effectiveTargetMonth
@@ -254,6 +257,12 @@ function App(): ReactNode {
     plan && plan.availableInvestmentAmount > 0
       ? `${formatWon(plan.availableInvestmentAmount)}으로 ${portfolioMarket} 시장의 최신 공개자료 기반 투자 후보를 조사하고 싶어. 현재가, 최근 실적, 밸류에이션, 주요 뉴스는 출처와 기준일이 확인되는 경우에만 쓰고, 확인되지 않으면 모른다고 말해줘. 매수 지시가 아니라 ETF와 개별 종목 후보를 역할별로 비교하고, 각 후보의 비중 초안·선정 근거·주요 위험·추가 확인 자료를 표로 정리해줘.`
       : `${portfolioMarket} 시장의 최신 공개자료 기반 투자 후보를 조사하고 싶어. 먼저 내 상황에서 투자 가능한 금액과 투자 성향을 확인한 뒤, 현재가와 재무 데이터는 출처가 있을 때만 후보 비교에 써줘.`
+
+  useEffect(() => {
+    if (hasUserMessage) {
+      setIsStarterOpen(false)
+    }
+  }, [hasUserMessage])
 
   async function sendMessage(): Promise<void> {
     const normalizedDraft = draft.trim()
@@ -316,6 +325,9 @@ function App(): ReactNode {
           attachments: [],
         },
       ])
+      setLatestRecommendedAction(
+        toNextAction(response.nextActionRecommendation),
+      )
       setPendingResponse(hasVisibleProposal(response) ? response : null)
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -425,6 +437,7 @@ function App(): ReactNode {
     setDraft('')
     setAttachments([])
     setPendingResponse(null)
+    setLatestRecommendedAction(null)
     setErrorMessage('')
   }
 
@@ -536,19 +549,6 @@ function App(): ReactNode {
               {messages.map((message) => (
                 <MessageBubble message={message} key={message.id} />
               ))}
-              {shouldShowNextAction && (
-                <NextActionPanel
-                  action={nextAction}
-                  targetMonth={effectiveTargetMonth}
-                  onOpenSalaryCalculator={openSalaryCalculator}
-                  onUseDraft={(message) => {
-                    setDraft(message)
-                    requestAnimationFrame(() =>
-                      composerTextAreaReference.current?.focus(),
-                    )
-                  }}
-                />
-              )}
               {isReplying && (
                 <div className="message-row agent">
                   <span className="message-avatar">
@@ -573,14 +573,40 @@ function App(): ReactNode {
                   }
                 />
               )}
+              {shouldShowNextAction && (
+                <NextActionPanel
+                  action={recommendedAction}
+                  targetMonth={effectiveTargetMonth}
+                  onOpenSalaryCalculator={openSalaryCalculator}
+                  onUseDraft={(message) => {
+                    setDraft(message)
+                    requestAnimationFrame(() =>
+                      composerTextAreaReference.current?.focus(),
+                    )
+                  }}
+                />
+              )}
             </div>
 
             {shouldShowQuickMessages && (
-              <div className="suggestion-section">
+              <div className={`suggestion-section ${isStarterOpen ? 'open' : 'collapsed'}`}>
                 <div className="starter-heading">
-                  <span>이렇게 시작해 보세요</span>
+                  <span>이렇게도 시작해 보세요</span>
+                  <button
+                    type="button"
+                    aria-expanded={isStarterOpen}
+                    aria-label={
+                      isStarterOpen
+                        ? '추천 질문 접기'
+                        : '추천 질문 펼치기'
+                    }
+                    onClick={() => setIsStarterOpen((isOpen) => !isOpen)}
+                  >
+                    <ChevronRight size={16} />
+                  </button>
                 </div>
-                <div className="quick-message-list" aria-label="추천 질문">
+                {isStarterOpen && (
+                  <div className="quick-message-list" aria-label="추천 질문">
                   <button
                     className="starter-card calculator-quick-button"
                     type="button"
@@ -635,7 +661,8 @@ function App(): ReactNode {
                       <ChevronRight size={16} />
                     </button>
                   </div>
-                </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1920,9 +1947,9 @@ function PlanSection({
                   type="button"
                   onClick={() => onUseDraft(createPlanDetailDraft(plan))}
                 >
-                  세부 계획 함께 세우기
+                  세부 계획하기
                 </button>
-                <span>각 범주의 사용처와 금액을 한 번에 조정해요.</span>
+                <span>각 범주의 사용처와 금액을 자동으로 조정해요.</span>
               </div>
               {plan.allocations.map((allocation) => {
                 const visibleDetails = getVisibleAllocationDetails(allocation)
@@ -2471,6 +2498,16 @@ function getNextAction(
     description:
       '월급에서 먼저 나갈 돈을 빼고, 남는 금액만 투자금으로 계산했어요.',
     primaryLabel: '계획 보기',
+  }
+}
+
+function toNextAction(recommendation: NextActionRecommendation): NextAction {
+  return {
+    kind: 'message',
+    title: recommendation.title,
+    description: recommendation.description,
+    primaryLabel: recommendation.primaryLabel,
+    draft: recommendation.draft,
   }
 }
 
