@@ -82,7 +82,31 @@ export interface PaydayConversationRequest {
   >
   profile: FinancialProfile
   monthlySpending: MonthlySpendingSummary[]
+  appContext: PaydayConversationAppContext
   recentMessages: Array<Pick<ConversationMessage, 'role' | 'content'>>
+}
+
+export interface PaydayConversationAppContext {
+  stage:
+    | 'empty'
+    | 'salary_only'
+    | 'spending_ready'
+    | 'budget_detail_ready'
+    | 'investment_ready'
+  confirmedFacts: string[]
+  planSnapshot: {
+    monthlySalary: number | null
+    availableInvestmentAmount: number | null
+    safetyStatus: string | null
+    allocationSummary: Array<{
+      label: string
+      amount: number
+    }>
+  }
+  recommendationPolicy: {
+    priority: string[]
+    avoid: string[]
+  }
 }
 
 export interface NextActionRecommendation {

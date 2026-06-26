@@ -55,6 +55,7 @@ import {
   INITIAL_AGENT_MESSAGE,
   toPaydayInput,
   type ConversationAttachment,
+  type PaydayConversationAppContext,
   type ConversationMessage,
   type FinancialProfile,
   type FinancialProfilePatch,
@@ -229,9 +230,15 @@ function App(): ReactNode {
     }
   }, [plan])
   const completedProfileFields = countCompletedProfileFields(profile)
-  const nextAction = getNextAction(profile, plan)
+  const hasSpendingHistory = monthlySpending.length > 0
+  const nextAction = getNextAction(profile, plan, hasSpendingHistory)
   const hasUserMessage = messages.some((message) => message.role === 'user')
-  const recommendedAction = latestRecommendedAction ?? nextAction
+  const recommendedAction = resolveRecommendedAction(
+    latestRecommendedAction,
+    nextAction,
+    profile,
+    hasSpendingHistory,
+  )
   const shouldShowQuickMessages = completedProfileFields > 0
   const shouldShowNextAction = !isReplying
   const effectiveTargetMonth =
@@ -323,6 +330,12 @@ function App(): ReactNode {
           })),
           profile,
           monthlySpending,
+          appContext: createConversationAppContext({
+            profile,
+            plan,
+            monthlySpending,
+            hasSpendingHistory,
+          }),
           recentMessages: nextMessages.slice(-10).map((message) => ({
             role: message.role,
             content: message.content,
@@ -593,6 +606,7 @@ function App(): ReactNode {
                 <NextActionPanel
                   action={recommendedAction}
                   profile={profile}
+                  hasSpendingHistory={hasSpendingHistory}
                   plan={plan}
                   stockResearchRequest={stockResearchRequest}
                   targetMonth={effectiveTargetMonth}
@@ -899,6 +913,7 @@ function App(): ReactNode {
 function NextActionPanel({
   action,
   profile,
+  hasSpendingHistory,
   plan,
   stockResearchRequest,
   targetMonth,
@@ -907,6 +922,7 @@ function NextActionPanel({
 }: {
   action: NextAction
   profile: FinancialProfile
+  hasSpendingHistory: boolean
   plan: PaydayPlan | null
   stockResearchRequest: string
   targetMonth: string | undefined
@@ -916,6 +932,7 @@ function NextActionPanel({
   const secondaryActions = createSecondaryNextActions({
     targetMonth,
     profile,
+    hasSpendingHistory,
     plan,
     stockResearchRequest,
     primaryDraft: action.draft,
@@ -974,12 +991,14 @@ function NextActionPanel({
 function createSecondaryNextActions({
   targetMonth,
   profile,
+  hasSpendingHistory,
   plan,
   stockResearchRequest,
   primaryDraft,
 }: {
   targetMonth: string | undefined
   profile: FinancialProfile
+  hasSpendingHistory: boolean
   plan: PaydayPlan | null
   stockResearchRequest: string
   primaryDraft: string | undefined
@@ -989,6 +1008,7 @@ function createSecondaryNextActions({
     : '사용내역'
   const hasInvestmentRoom = plan !== null && plan.availableInvestmentAmount > 0
   const shouldStartWithSpending = hasOnlyMonthlySalary(profile)
+  const canSuggestInvestment = canPrioritizeInvestment(profile, hasSpendingHistory)
   const needsEmergencyFund =
     plan !== null &&
     plan.input.currentEmergencyFund < plan.input.targetEmergencyFund
@@ -1020,7 +1040,7 @@ function createSecondaryNextActions({
           '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워줘.',
         icon: <WalletCards size={15} />,
       }
-  const investmentAction: SecondaryNextAction = hasInvestmentRoom
+  const investmentAction: SecondaryNextAction = hasInvestmentRoom && canSuggestInvestment
     ? {
         label: '투자 후보',
         message: stockResearchRequest,
@@ -1060,10 +1080,10 @@ function createSecondaryNextActions({
     preferenceAction,
     investmentAction,
   ] : [
-    hasInvestmentRoom
+    hasInvestmentRoom && canSuggestInvestment
       ? investmentAction
       : emergencyOrPortfolioAction,
-    hasInvestmentRoom
+    hasInvestmentRoom && canSuggestInvestment
       ? emergencyOrPortfolioAction
       : investmentAction,
     spendingAction,
@@ -2611,6 +2631,7 @@ function getFinancialProfileItems(
 function getNextAction(
   profile: FinancialProfile,
   plan: PaydayPlan | null,
+  hasSpendingHistory: boolean,
 ): NextAction {
   if (profile.monthlySalary === null) {
     return {
@@ -2635,7 +2656,10 @@ function getNextAction(
       }
     }
 
-    if (plan.availableInvestmentAmount > 0) {
+    if (
+      plan.availableInvestmentAmount > 0 &&
+      canPrioritizeInvestment(profile, hasSpendingHistory)
+    ) {
       return {
         kind: 'message',
         title: '투자 후보까지 이어볼까요',
@@ -2679,6 +2703,162 @@ function getNextAction(
   }
 }
 
+function resolveRecommendedAction(
+  latestAction: NextAction | null,
+  fallbackAction: NextAction,
+  profile: FinancialProfile,
+  hasSpendingHistory: boolean,
+): NextAction {
+  if (
+    latestAction &&
+    !isPrematureInvestmentAction(latestAction, profile, hasSpendingHistory)
+  ) {
+    return latestAction
+  }
+
+  return fallbackAction
+}
+
+function isPrematureInvestmentAction(
+  action: NextAction,
+  profile: FinancialProfile,
+  hasSpendingHistory: boolean,
+): boolean {
+  if (canPrioritizeInvestment(profile, hasSpendingHistory)) {
+    return false
+  }
+
+  const actionText = [
+    action.title,
+    action.description,
+    action.primaryLabel,
+    action.draft ?? '',
+  ].join(' ')
+
+  return ['투자', '종목', '포트폴리오'].some((keyword) =>
+    actionText.includes(keyword),
+  )
+}
+
+function createConversationAppContext({
+  profile,
+  plan,
+  monthlySpending,
+  hasSpendingHistory,
+}: {
+  profile: FinancialProfile
+  plan: PaydayPlan | null
+  monthlySpending: MonthlySpendingSummary[]
+  hasSpendingHistory: boolean
+}): PaydayConversationAppContext {
+  const canSuggestInvestment = canPrioritizeInvestment(profile, hasSpendingHistory)
+  const stage = getConversationStage(profile, plan, hasSpendingHistory)
+
+  return {
+    stage,
+    confirmedFacts: createConfirmedFacts(profile, monthlySpending),
+    planSnapshot: {
+      monthlySalary: profile.monthlySalary,
+      availableInvestmentAmount:
+        plan && canSuggestInvestment ? plan.availableInvestmentAmount : null,
+      safetyStatus: plan?.safetyStatus ?? null,
+      allocationSummary:
+        plan?.allocations.map((allocation) => ({
+          label: allocation.label,
+          amount: allocation.amount,
+        })) ?? [],
+    },
+    recommendationPolicy: createRecommendationPolicy(stage),
+  }
+}
+
+function getConversationStage(
+  profile: FinancialProfile,
+  plan: PaydayPlan | null,
+  hasSpendingHistory: boolean,
+): PaydayConversationAppContext['stage'] {
+  if (profile.monthlySalary === null) {
+    return 'empty'
+  }
+  if (hasOnlyMonthlySalary(profile)) {
+    return 'salary_only'
+  }
+  if (canPrioritizeInvestment(profile, hasSpendingHistory) && plan?.availableInvestmentAmount) {
+    return 'investment_ready'
+  }
+  if (profile.customUses.length > 0) {
+    return 'budget_detail_ready'
+  }
+  return 'spending_ready'
+}
+
+function createConfirmedFacts(
+  profile: FinancialProfile,
+  monthlySpending: MonthlySpendingSummary[],
+): string[] {
+  const facts: string[] = []
+  if (profile.monthlySalary !== null) {
+    facts.push(`월 실수령액 ${formatWon(profile.monthlySalary)}`)
+  }
+  if (profile.essentialExpense !== null) {
+    facts.push(`필수 생활비 ${formatWon(profile.essentialExpense)}`)
+  }
+  if (profile.debtPayment !== null) {
+    facts.push(`카드·부채 결제 ${formatWon(profile.debtPayment)}`)
+  }
+  if (profile.currentEmergencyFund !== null) {
+    facts.push(`현재 비상금 ${formatWon(profile.currentEmergencyFund)}`)
+  }
+  if (profile.targetEmergencyFund !== null) {
+    facts.push(`비상금 목표 ${formatWon(profile.targetEmergencyFund)}`)
+  }
+  if (profile.goalName.trim()) {
+    facts.push(`목표 ${profile.goalName}`)
+  }
+  if (profile.goalMonthlyAmount !== null) {
+    facts.push(`목표 저축 ${formatWon(profile.goalMonthlyAmount)}`)
+  }
+  if (profile.flexibleSpending !== null) {
+    facts.push(`여유 생활비 ${formatWon(profile.flexibleSpending)}`)
+  }
+  if (profile.riskProfile && profile.investmentHorizon) {
+    facts.push(`투자 조건 ${profile.riskProfile} · ${profile.investmentHorizon}`)
+  }
+  if (monthlySpending.length > 0) {
+    facts.push(
+      `확인된 사용내역 ${monthlySpending.map((summary) => formatMonth(summary.month)).join(', ')}`,
+    )
+  }
+  return facts
+}
+
+function createRecommendationPolicy(
+  stage: PaydayConversationAppContext['stage'],
+): PaydayConversationAppContext['recommendationPolicy'] {
+  if (stage === 'empty') {
+    return {
+      priority: ['월 실수령액 입력 또는 계산'],
+      avoid: ['투자 후보 조사', '종목 분석', '포트폴리오 구성'],
+    }
+  }
+  if (stage === 'salary_only') {
+    return {
+      priority: ['사용내역 월 자동 판단', '카테고리별 지출 분포', '고정비 확인', '비상금·카드값 우선순위 점검'],
+      avoid: ['투자 후보 조사', '종목 분석', '포트폴리오 구성'],
+    }
+  }
+  if (stage === 'investment_ready') {
+    return {
+      priority: ['세부 사용처 보완', '실제 사용내역과 계획 비교', '비상금·부채 점검', '출처 기반 투자 후보 조사'],
+      avoid: ['이미 확인된 정보를 다시 질문하기'],
+    }
+  }
+  return {
+    priority: ['세부 사용처 보완', '실제 사용내역과 계획 비교', '비상금·카드값 우선순위 점검'],
+    avoid: ['확인되지 않은 투자 가능 금액으로 종목 추천하기', '이미 확인된 정보를 다시 질문하기'],
+  }
+}
+
 function hasOnlyMonthlySalary(profile: FinancialProfile): boolean {
   return (
     profile.monthlySalary !== null &&
@@ -2686,13 +2866,30 @@ function hasOnlyMonthlySalary(profile: FinancialProfile): boolean {
     profile.debtPayment === null &&
     profile.currentEmergencyFund === null &&
     profile.targetEmergencyFund === null &&
-    profile.goalName === null &&
+    profile.goalName.trim().length === 0 &&
     profile.goalMonthlyAmount === null &&
     profile.flexibleSpending === null &&
     profile.riskProfile === null &&
     profile.investmentHorizon === null &&
     profile.preferences.length === 0 &&
     profile.customUses.length === 0
+  )
+}
+
+function canPrioritizeInvestment(
+  profile: FinancialProfile,
+  hasSpendingHistory: boolean,
+): boolean {
+  return (
+    hasSpendingHistory ||
+    profile.customUses.length > 0 ||
+    profile.essentialExpense !== null ||
+    profile.debtPayment !== null ||
+    profile.currentEmergencyFund !== null ||
+    profile.targetEmergencyFund !== null ||
+    profile.goalMonthlyAmount !== null ||
+    profile.flexibleSpending !== null ||
+    (profile.riskProfile !== null && profile.investmentHorizon !== null)
   )
 }
 

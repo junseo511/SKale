@@ -122,6 +122,36 @@ const monthlySpendingSummarySchema = z.object({
   needReview: z.boolean(),
 })
 
+const paydayConversationAppContextSchema = z.object({
+  stage: z.enum([
+    'empty',
+    'salary_only',
+    'spending_ready',
+    'budget_detail_ready',
+    'investment_ready',
+  ]),
+  confirmedFacts: z.array(z.string().trim().min(1).max(200)).max(20),
+  planSnapshot: z.object({
+    monthlySalary: z.number().nonnegative().nullable(),
+    availableInvestmentAmount: z.number().nonnegative().nullable(),
+    safetyStatus: z.string().trim().max(80).nullable(),
+    allocationSummary: z
+      .array(
+        z
+          .object({
+            label: z.string().trim().min(1).max(80),
+            amount: z.number().nonnegative(),
+          })
+          .strict(),
+      )
+      .max(12),
+  }).strict(),
+  recommendationPolicy: z.object({
+    priority: z.array(z.string().trim().min(1).max(120)).max(8),
+    avoid: z.array(z.string().trim().min(1).max(120)).max(8),
+  }).strict(),
+}).strict()
+
 const paydayConversationModelResponseValidationSchema = z
   .object({
     reply: z.string().min(1),
@@ -199,6 +229,7 @@ const paydayConversationRequestSchema = z
       .default([]),
     profile: financialProfileSchema,
     monthlySpending: z.array(monthlySpendingSummarySchema).max(24),
+    appContext: paydayConversationAppContextSchema.optional(),
     recentMessages: z
       .array(
         z.object({
@@ -574,6 +605,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
       attachments,
       profile,
       monthlySpending,
+      appContext,
       recentMessages,
     } = parsedRequest.data
     fallbackMessage = message
@@ -620,6 +652,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
                 text: [
                   `Current financial profile:\n${JSON.stringify(profile)}`,
                   `\nConfirmed monthly spending summaries:\n${JSON.stringify(monthlySpending)}`,
+                  `\nApplication flow context:\n${JSON.stringify(appContext ?? null)}`,
                   `\nRecent conversation:\n${JSON.stringify(recentMessages)}`,
                   `\nCurrent user message:\n${message || '(no text)'}`,
                   `\nTarget month for the submitted spending data:\n${targetMonth ?? '(not specified)'}`,
@@ -649,6 +682,10 @@ app.post('/api/payday/chat', async (request, response, next) => {
           'Only monthlySalary is required before the application can create a first salary plan. Essential expense, debt, emergency fund, goals, flexible spending, risk profile, and investment horizon can stay null unless the user explicitly provides or changes them; the application will fill a clearly labeled default draft for those fields.',
           'Be proactive: when enough information exists to produce a useful draft, produce the draft first and ask at most one follow-up only if it would materially change the next action.',
           'Do not run a long interrogation flow. Prefer using saved profile values, confirmed spending summaries, and reasonable clearly-labeled defaults over asking again.',
+          'Use Application flow context as the strongest signal for nextActionRecommendation. Follow recommendationPolicy.priority and avoid recommendationPolicy.avoid unless the current user message explicitly asks otherwise.',
+          'If Application flow context stage is salary_only, the next action must focus on spending history, fixed costs, emergency fund, debt/card payment, or budget details. Do not recommend investment candidates, stock analysis, or portfolio construction at this stage.',
+          'If Application flow context includes confirmedFacts, treat those facts as already known. Do not ask the user to repeat them.',
+          'Use planSnapshot only as app-calculated context. Do not pretend the model calculated those amounts.',
           'Always return nextActionRecommendation for the next best user action. It must be a concrete action the user can send next, not generic advice. The draft must be a complete Korean message that can be placed into the composer.',
           'Vary nextActionRecommendation based on the current context. Do not repeatedly recommend only detailed budget planning. Rotate among concrete actions such as category spending distribution, filling missing detail uses, comparing actual card spending to the plan, emergency fund or debt priority checks, investment-candidate research, and source-backed portfolio review.',
           'If the immediately completed task was detailed budget planning, recommend a next step such as investment candidate research, spending-plan comparison, or emergency fund priority review instead of another draft-refinement action.',
@@ -1297,6 +1334,17 @@ function createDefaultNextActionRecommendation(profile: FinancialProfile): {
     }
   }
 
+  if (hasOnlyMonthlySalary(profile)) {
+    return {
+      title: '사용내역을 붙여볼까요',
+      description:
+        '월급 기준은 잡혔으니 카드 내역이나 고정비를 더해 실제 생활비 기준으로 계획을 맞춰볼 수 있어요.',
+      primaryLabel: '사용내역 분석',
+      draft:
+        '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.',
+    }
+  }
+
   if (profile.customUses.length === 0) {
     return {
       title: '세부 사용처를 잡아볼까요',
@@ -1325,6 +1373,23 @@ function createDefaultNextActionRecommendation(profile: FinancialProfile): {
     draft:
       '최근 카드 내역을 기준으로 저장된 세부 사용처와 실제 지출이 어떻게 다른지 비교해줘.',
   }
+}
+
+function hasOnlyMonthlySalary(profile: FinancialProfile): boolean {
+  return (
+    profile.monthlySalary !== null &&
+    profile.essentialExpense === null &&
+    profile.debtPayment === null &&
+    profile.currentEmergencyFund === null &&
+    profile.targetEmergencyFund === null &&
+    profile.goalName.trim().length === 0 &&
+    profile.goalMonthlyAmount === null &&
+    profile.flexibleSpending === null &&
+    profile.riskProfile === null &&
+    profile.investmentHorizon === null &&
+    profile.preferences.length === 0 &&
+    profile.customUses.length === 0
+  )
 }
 
 function createProactiveDetailPlanIfNeeded(
