@@ -463,7 +463,13 @@ const port = Number(process.env.PORT ?? DEFAULT_PORT)
 const allowedOrigin = process.env.ALLOWED_ORIGIN
 
 app.use(cors({
-  origin: allowedOrigin ? allowedOrigin.split(',').map((origin) => origin.trim()) : true,
+  origin(origin, callback) {
+    if (!origin || isAllowedOrigin(origin, allowedOrigin)) {
+      callback(null, true)
+      return
+    }
+    callback(new Error('Not allowed by CORS'))
+  },
 }))
 app.use(express.json({ limit: '24mb' }))
 
@@ -475,6 +481,7 @@ app.get('/api/health', (_request: Request, response: Response) => {
 })
 
 app.post('/api/payday/chat', async (request, response, next) => {
+  let fallbackMessage = ''
   try {
     const parsedRequest = paydayConversationRequestSchema.safeParse(
       request.body,
@@ -497,6 +504,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
       monthlySpending,
       recentMessages,
     } = parsedRequest.data
+    fallbackMessage = message
     const hasKnownFinancialContext =
       hasFinancialProfileContext(profile) ||
       monthlySpending.length > 0 ||
@@ -586,7 +594,9 @@ app.post('/api/payday/chat', async (request, response, next) => {
         maxOutputTokens: 4_000,
       },
     })
-    const modelJson = parseModelJson<unknown>(modelResponse.text)
+    const modelJson = parseModelJson<unknown>(
+      readGenerateContentText(modelResponse),
+    )
     const result =
       paydayConversationModelResponseValidationSchema.parse(modelJson)
     const profilePatch = Object.fromEntries(
@@ -604,6 +614,10 @@ app.post('/api/payday/chat', async (request, response, next) => {
         result.monthlySpendingProposal ?? undefined,
     })
   } catch (error) {
+    if (isEmptyModelTextError(error)) {
+      response.json(createFallbackPaydayResponse(fallbackMessage))
+      return
+    }
     next(error)
   }
 })
@@ -660,7 +674,9 @@ app.post('/api/spending/analyze', async (request, response, next) => {
         maxOutputTokens: 4_000,
       },
     })
-    const analysis = parseModelJson<SpendingOutput>(modelResponse.text)
+    const analysis = parseModelJson<SpendingOutput>(
+      readGenerateContentText(modelResponse),
+    )
     const normalizedProposals = analysis.proposals.map((proposal) => ({
       ...proposal,
       date: normalizeTransactionDate(proposal.rawText, proposal.date),
@@ -746,7 +762,7 @@ app.post('/api/assets/analyze', async (request, response, next) => {
         reason: string
       }>
       allocationInsight: string
-    }>(modelResponse.text)
+    }>(readGenerateContentText(modelResponse))
 
     response.json({
       ...analysis,
@@ -799,7 +815,9 @@ app.post('/api/portfolio/analyze', async (request, response, next) => {
         maxOutputTokens: 4_000,
       },
     })
-    const analysis = parseModelJson<Record<string, unknown>>(modelResponse.text)
+    const analysis = parseModelJson<Record<string, unknown>>(
+      readGenerateContentText(modelResponse),
+    )
     response.json({
       ...analysis,
       id: crypto.randomUUID(),
@@ -847,7 +865,7 @@ app.post('/api/stocks/analyze', async (request, response, next) => {
     const analysis = parseModelJson<{
       ticker: string | null
       [key: string]: unknown
-    }>(modelResponse.text)
+    }>(readGenerateContentText(modelResponse))
 
     response.json({
       ...analysis,
@@ -925,6 +943,51 @@ function createModelClient(): { client: GoogleGenAI; model: string } {
   }
 }
 
+function readGenerateContentText(response: unknown): string | undefined {
+  if (
+    typeof response === 'object' &&
+    response !== null &&
+    'text' in response &&
+    typeof response.text === 'string' &&
+    response.text.trim()
+  ) {
+    return response.text
+  }
+
+  const candidates =
+    typeof response === 'object' &&
+    response !== null &&
+    'candidates' in response &&
+    Array.isArray(response.candidates)
+      ? response.candidates
+      : []
+  const partTexts = candidates.flatMap((candidate) => {
+    if (
+      typeof candidate !== 'object' ||
+      candidate === null ||
+      !('content' in candidate) ||
+      typeof candidate.content !== 'object' ||
+      candidate.content === null ||
+      !('parts' in candidate.content) ||
+      !Array.isArray(candidate.content.parts)
+    ) {
+      return []
+    }
+    return candidate.content.parts
+      .map((part: unknown) =>
+        typeof part === 'object' &&
+        part !== null &&
+        'text' in part &&
+        typeof part.text === 'string'
+          ? part.text
+          : '',
+      )
+      .filter((text: string) => text.trim().length > 0)
+  })
+
+  return partTexts.length > 0 ? partTexts.join('\n') : undefined
+}
+
 function parseModelJson<T>(text: string | undefined): T {
   if (!text) {
     const error = new Error('답변이 비어 있어요. 잠시 후 다시 보내주세요.')
@@ -941,6 +1004,44 @@ function parseModelJson<T>(text: string | undefined): T {
     const error = new Error('답변을 읽지 못했어요. 잠시 후 다시 시도해 주세요.')
     Object.assign(error, { status: 502 })
     throw error
+  }
+}
+
+function isEmptyModelTextError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith('답변이 비어 있어요')
+}
+
+function createFallbackPaydayResponse(message: string): {
+  reply: string
+  profilePatch: Record<string, never>
+  monthlySpendingProposal: undefined
+  missingData: string[]
+  appliedFacts: string[]
+} {
+  const hasSpendingSummaryRequest =
+    message.includes('카드') ||
+    message.includes('사용내역') ||
+    message.includes('소비') ||
+    message.includes('지출')
+
+  if (hasSpendingSummaryRequest) {
+    return {
+      reply:
+        '카드 내역 텍스트나 사진을 보내주시면 필수지출과 선택지출로 나눠볼게요.',
+      profilePatch: {},
+      monthlySpendingProposal: undefined,
+      missingData: ['카드 내역 텍스트 또는 사진'],
+      appliedFacts: [],
+    }
+  }
+
+  return {
+    reply:
+      '방금 답변을 완성하지 못했어요. 월급, 소비, 목표 중 하나를 조금 더 구체적으로 적어주시면 바로 이어서 정리할게요.',
+    profilePatch: {},
+    monthlySpendingProposal: undefined,
+    missingData: [],
+    appliedFacts: [],
   }
 }
 
@@ -1003,6 +1104,19 @@ function getErrorStatus(error: unknown): number | undefined {
     return error.status
   }
   return undefined
+}
+
+function isAllowedOrigin(origin: string, configuredOrigins: string | undefined): boolean {
+  if (/^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
+    return true
+  }
+  if (!configuredOrigins) {
+    return true
+  }
+  return configuredOrigins
+    .split(',')
+    .map((configuredOrigin) => configuredOrigin.trim())
+    .includes(origin)
 }
 
 function isClearlyOutsidePaydayScope(
