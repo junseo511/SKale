@@ -815,7 +815,7 @@ function App(): ReactNode {
 
             <p className="privacy-copy">
               <LockKeyhole size={13} />
-              돈의 흐름을 차근차근 정리해 볼게요. 사진을 올릴 땐 민감한 개인정보를 가려주세요.
+              사진을 올릴 땐 민감한 개인정보를 가려주세요.
             </p>
           </section>
 
