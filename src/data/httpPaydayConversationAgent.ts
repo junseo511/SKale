@@ -35,18 +35,18 @@ export class HttpPaydayConversationAgent
       )
       throw new Error(
         errorResponse?.message ??
-          `월급 Agent 요청을 처리하지 못했습니다: ${response.status}`,
+          `답변을 가져오지 못했어요. 잠시 후 다시 시도해 주세요. (${response.status})`,
       )
     }
 
     const responseBody: unknown = await readJsonResponse<unknown>(response)
     if (!responseBody) {
-      throw new Error('Agent 응답이 비어 있습니다. API 서버 연결을 확인해 주세요.')
+      throw new Error('답변이 비어 있어요. 잠시 후 다시 보내주세요.')
     }
     const parsedResponse =
       paydayConversationResponseSchema.safeParse(responseBody)
     if (!parsedResponse.success) {
-      throw new Error('Agent 응답 형식이 웹 계약과 일치하지 않습니다.')
+      throw new Error('답변을 화면에 표시하지 못했어요. 다시 시도해 주세요.')
     }
     return parsedResponse.data
   }
@@ -61,6 +61,6 @@ async function readJsonResponse<T>(response: Response): Promise<T | null> {
   try {
     return JSON.parse(responseText) as T
   } catch {
-    throw new Error('API 서버가 JSON이 아닌 응답을 보냈습니다. 서버 상태를 확인해 주세요.')
+    throw new Error('답변을 읽지 못했어요. 잠시 후 다시 시도해 주세요.')
   }
 }

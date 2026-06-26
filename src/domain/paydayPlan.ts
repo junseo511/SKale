@@ -289,7 +289,7 @@ function createHeadline(
   investmentAmount: number,
 ): string {
   if (safetyStatus === '안전망 우선') {
-    return '이번 월급은 투자보다 생활의 안전망을 먼저 단단하게 만들 때예요.'
+    return '이번 달은 투자보다 비상금과 카드값을 먼저 챙기는 편이 좋아요.'
   }
   if (investmentAmount > 0) {
     return `${investmentAmount.toLocaleString()}원을 무리 없이 장기 투자에 배분할 수 있어요.`

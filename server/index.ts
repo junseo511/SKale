@@ -549,7 +549,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
           'The user may write in Korean or English. Always write every user-facing natural-language field in Korean, including reply, insight, missingData, appliedFacts, preferences, and category descriptions.',
           'Keep the Korean conversation concise and natural. Confirm one financial-profile item or preference at a time.',
           'The assistant may answer general money-related questions, including questions about salary, spending habits, budgeting, saving, emergency funds, debt, retirement accounts, asset allocation, investing principles, risk, diversification, valuation, and portfolio construction.',
-          'When answering a money-related question that is not just data extraction, include a short "참고 관점" section when useful. Cite well-known institutions or investors by name only for broadly established principles, such as OECD/financial literacy guidance, SEC investor education, FINRA investor education, Vanguard diversification and long-term investing principles, Bogleheads/John Bogle low-cost diversified indexing, Warren Buffett long-term business-quality and margin-of-safety thinking, Benjamin Graham margin of safety, Howard Marks risk awareness and cycles, Ray Dalio diversification, or Morgan Housel behavior-first personal finance.',
+          'When answering a money-related question that is not just data extraction, briefly add a Korean section titled "기준으로 보면" when useful. Cite well-known institutions or investors by name only for broadly established principles, such as OECD/financial literacy guidance, SEC investor education, FINRA investor education, Vanguard diversification and long-term investing principles, Bogleheads/John Bogle low-cost diversified indexing, Warren Buffett long-term business-quality and margin-of-safety thinking, Benjamin Graham margin of safety, Howard Marks risk awareness and cycles, Ray Dalio diversification, or Morgan Housel behavior-first personal finance.',
           'Do not fabricate exact quotes, dates, reports, recent market views, current rankings, current prices, financial results, tax rules, or legal/regulatory details. If the user asks for latest/current information or exact citations that were not provided, say in Korean that live verification is needed and give only a general framework.',
           'Make clear that cited views are reference perspectives, not personalized investment advice. Do not imply endorsement from any institution or investor.',
           'Only place facts that the user stated clearly or that are directly visible in the submitted data into profilePatch. Never infer or invent a value.',
@@ -864,7 +864,9 @@ app.post('/api/stocks/analyze', async (request, response, next) => {
 app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
   const status = getErrorStatus(error)
   if (status === 429) {
-    response.status(429).json({ message: 'AI API 사용 한도를 초과했습니다. 프로젝트의 할당량과 결제 상태를 확인해 주세요.' })
+    response.status(429).json({
+      message: '지금은 AI 답변 사용량이 다 찼어요. API 할당량이나 결제 상태를 확인해 주세요.',
+    })
     return
   }
   if (status === 401 || status === 403) {
@@ -879,6 +881,21 @@ app.use((error: unknown, _request: Request, response: Response, _next: NextFunct
   if (status && status >= 400 && status < 500) {
     response.status(status).json({
       message: error instanceof Error ? error.message : '요청 형식이 올바르지 않습니다.',
+    })
+    return
+  }
+  if (error instanceof z.ZodError) {
+    response.status(502).json({
+      message: '답변을 화면에 맞게 정리하지 못했어요. 잠시 후 다시 시도해 주세요.',
+    })
+    return
+  }
+  if (status === 502) {
+    response.status(502).json({
+      message:
+        error instanceof Error
+          ? error.message
+          : '답변을 정리하지 못했어요. 잠시 후 다시 시도해 주세요.',
     })
     return
   }
@@ -908,13 +925,21 @@ function createModelClient(): { client: GoogleGenAI; model: string } {
 
 function parseModelJson<T>(text: string | undefined): T {
   if (!text) {
-    throw new Error('AI 응답에 분석 결과가 없습니다.')
+    const error = new Error('답변이 비어 있어요. 잠시 후 다시 보내주세요.')
+    Object.assign(error, { status: 502 })
+    throw error
   }
   const normalizedText = text
     .trim()
     .replace(/^```json\s*/i, '')
     .replace(/\s*```$/, '')
-  return JSON.parse(normalizedText) as T
+  try {
+    return JSON.parse(normalizedText) as T
+  } catch {
+    const error = new Error('답변을 읽지 못했어요. 잠시 후 다시 시도해 주세요.')
+    Object.assign(error, { status: 502 })
+    throw error
+  }
 }
 
 function validateImageSizes(images: z.infer<typeof imageAttachmentSchema>[]): void {

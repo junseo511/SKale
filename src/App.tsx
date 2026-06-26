@@ -19,6 +19,7 @@ import {
   Plus,
   RotateCcw,
   Sparkles,
+  SquarePen,
   TrendingUp,
   Trash2,
   UserRound,
@@ -59,8 +60,22 @@ import './App.css'
 
 type PortfolioMarket = '한국' | '미국' | '한국·미국'
 type NextActionKind = 'salary' | 'message' | 'plan'
+type EditableProfileField = keyof Pick<
+  FinancialProfile,
+  | 'monthlySalary'
+  | 'essentialExpense'
+  | 'debtPayment'
+  | 'currentEmergencyFund'
+  | 'targetEmergencyFund'
+  | 'goalName'
+  | 'goalMonthlyAmount'
+  | 'flexibleSpending'
+  | 'riskProfile'
+  | 'investmentHorizon'
+>
 
 interface FinancialProfileItem {
+  field: EditableProfileField
   label: string
   value: string
   isComplete: boolean
@@ -114,19 +129,17 @@ function App(): ReactNode {
   const [isPlanSaved, setIsPlanSaved] = useState(false)
   const [isSalaryCalculatorOpen, setIsSalaryCalculatorOpen] =
     useState(false)
+  const [editingProfileField, setEditingProfileField] =
+    useState<EditableProfileField | null>(null)
   const [portfolioMarket, setPortfolioMarket] =
     useState<PortfolioMarket>('미국')
   const abortControllerReference = useRef<AbortController | null>(null)
-  const messageEndReference = useRef<HTMLDivElement | null>(null)
+  const scrollPositionBeforeModalReference = useRef(0)
   const composerTextAreaReference = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     workspaceRepository.save({ messages, profile, monthlySpending })
   }, [messages, profile, monthlySpending])
-
-  useEffect(() => {
-    messageEndReference.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isReplying, pendingResponse])
 
   useEffect(() => () => abortControllerReference.current?.abort(), [])
 
@@ -142,10 +155,27 @@ function App(): ReactNode {
     pendingResponse !== null ||
     messages.some((message) => message.role === 'user')
   const quickMessages = [
-    `${Number(targetMonth.split('-')[1])}월의 사용 내역을 정리하고 싶어.`,
-    '월세 70만원, 부모님 용돈 20만원, 운동비 10만원을 매달 먼저 빼줘.',
-    '외식과 여행 예산은 너무 줄이고 싶지 않아.',
-    '비상금과 투자는 어떤 기준으로 나누면 좋을까?',
+    {
+      label: `${Number(targetMonth.split('-')[1])}월 사용내역 정리`,
+      draft: `${Number(targetMonth.split('-')[1])}월의 사용 내역을 정리하고 싶어.`,
+      icon: <MessageCircleMore size={16} />,
+    },
+    {
+      label: '월급날 먼저 뺄 돈 정하기',
+      draft:
+        '월급날 월세 70만원, 부모님 용돈 20만원, 운동비 10만원을 먼저 따로 빼둘래.',
+      icon: <WalletCards size={16} />,
+    },
+    {
+      label: '줄이고 싶지 않은 소비 남기기',
+      draft: '외식과 여행 예산은 너무 줄이고 싶지 않아.',
+      icon: <MessageCircleMore size={16} />,
+    },
+    {
+      label: 'SK하이닉스 종목 분석',
+      draft: 'SK하이닉스 종목을 장기 투자 기준으로 점검해줘.',
+      icon: <TrendingUp size={16} />,
+    },
   ]
   const portfolioRequest =
     plan && plan.availableInvestmentAmount > 0
@@ -236,6 +266,19 @@ function App(): ReactNode {
     } finally {
       setIsReplying(false)
     }
+  }
+
+  function openSalaryCalculator(): void {
+    scrollPositionBeforeModalReference.current = window.scrollY
+    setIsSalaryCalculatorOpen(true)
+  }
+
+  function closeSalaryCalculator(): void {
+    setIsSalaryCalculatorOpen(false)
+    const restoreScrollPosition = () =>
+      window.scrollTo(0, scrollPositionBeforeModalReference.current)
+    requestAnimationFrame(restoreScrollPosition)
+    window.setTimeout(restoreScrollPosition, 80)
   }
 
   function applyProfileProposal(): void {
@@ -393,19 +436,19 @@ function App(): ReactNode {
             <Principle
               icon={<FileText />}
               title="지난 소비 보기"
-              text="내역만 가볍게 등록해요"
+              text="카드 내역을 정리해요"
             />
             <ChevronRight size={18} />
             <Principle
               icon={<UserRound />}
               title="내 기준 정하기"
-              text="줄이고 싶지 않은 지출을 남겨요"
+              text="지킬 지출을 남겨요"
             />
             <ChevronRight size={18} />
             <Principle
               icon={<PiggyBank />}
               title="월급 나누기"
-              text="생활비부터 투자금까지 정리해요"
+              text="쓸 돈과 모을 돈을 나눠요"
             />
           </div>
         </section>
@@ -423,7 +466,9 @@ function App(): ReactNode {
                 </div>
               </div>
               <span className="completion-badge">
-                {completedProfileFields}/{PROFILE_FIELD_COUNT} 입력
+                {completedProfileFields === PROFILE_FIELD_COUNT
+                  ? '계획 준비됨'
+                  : '월급 입력 전'}
               </span>
             </div>
 
@@ -435,7 +480,7 @@ function App(): ReactNode {
                 <NextActionPanel
                   action={nextAction}
                   targetMonth={targetMonth}
-                  onOpenSalaryCalculator={() => setIsSalaryCalculatorOpen(true)}
+                  onOpenSalaryCalculator={openSalaryCalculator}
                   onUseDraft={(message) => {
                     setDraft(message)
                     requestAnimationFrame(() =>
@@ -468,7 +513,6 @@ function App(): ReactNode {
                   }
                 />
               )}
-              <div ref={messageEndReference} />
             </div>
 
             {shouldShowQuickMessages && (
@@ -478,25 +522,19 @@ function App(): ReactNode {
                   <button
                     className="calculator-quick-button"
                     type="button"
-                    onClick={() => setIsSalaryCalculatorOpen(true)}
+                    onClick={openSalaryCalculator}
                   >
                     <Calculator size={16} />
                     실수령액 입력하기
                   </button>
-                  {quickMessages.map((message, index) => (
+                  {quickMessages.map((message) => (
                     <button
                       type="button"
-                      key={message}
-                      onClick={() => setDraft(message)}
+                      key={message.label}
+                      onClick={() => setDraft(message.draft)}
                     >
-                      {index === 3 ? (
-                        <TrendingUp size={16} />
-                      ) : index === 1 ? (
-                        <WalletCards size={16} />
-                      ) : (
-                        <MessageCircleMore size={16} />
-                      )}
-                      {message}
+                      {message.icon}
+                      {message.label}
                     </button>
                   ))}
                   <div className="portfolio-suggestion-card">
@@ -630,12 +668,16 @@ function App(): ReactNode {
 
             <p className="privacy-copy">
               <LockKeyhole size={13} />
-              돈 관련 질문은 참고 관점과 함께 답해요. 사진을 올릴 땐 민감한 개인정보를 가려주세요.
+              돈 이야기는 기준을 같이 살펴볼게요. 사진을 올릴 땐 민감한 개인정보를 가려주세요.
             </p>
           </section>
 
           <aside className="context-panel">
-            <ProfileCard profile={profile} completed={completedProfileFields} />
+            <ProfileCard
+              profile={profile}
+              completed={completedProfileFields}
+              onEdit={setEditingProfileField}
+            />
             <MonthlyHistoryCard
               summaries={monthlySpending}
               onUpdate={updateMonthlySpendingSummary}
@@ -661,7 +703,7 @@ function App(): ReactNode {
 
       {isSalaryCalculatorOpen && (
         <NetSalaryCalculator
-          onClose={() => setIsSalaryCalculatorOpen(false)}
+          onClose={closeSalaryCalculator}
           onApply={(monthlyNetSalary) => {
             setProfile((currentProfile) => ({
               ...currentProfile,
@@ -678,7 +720,20 @@ function App(): ReactNode {
                 attachments: [],
               },
             ])
-            setIsSalaryCalculatorOpen(false)
+            closeSalaryCalculator()
+            setIsPlanSaved(false)
+          }}
+        />
+      )}
+
+      {editingProfileField && (
+        <ProfileEditModal
+          field={editingProfileField}
+          profile={profile}
+          onClose={() => setEditingProfileField(null)}
+          onSave={(patch) => {
+            setProfile((currentProfile) => ({ ...currentProfile, ...patch }))
+            setEditingProfileField(null)
             setIsPlanSaved(false)
           }}
         />
@@ -714,8 +769,8 @@ function NextActionPanel({
       icon: <CalendarDays size={15} />,
     },
     {
-      label: '고정비 알려주기',
-      message: '월세 70만원, 부모님 용돈 20만원, 운동비 10만원을 매달 먼저 빼줘.',
+      label: '먼저 뺄 돈',
+      message: '월급날 월세 70만원, 부모님 용돈 20만원, 운동비 10만원을 먼저 따로 빼둘래.',
       icon: <WalletCards size={15} />,
     },
     {
@@ -743,30 +798,35 @@ function NextActionPanel({
   }
 
   return (
-    <section className="next-action-panel" aria-label="다음 입력">
-      <div className="next-action-copy">
-        <span>다음 한 가지</span>
-        <h2>{action.title}</h2>
-        <p>{action.description}</p>
-      </div>
-      <div className="next-action-buttons">
-        <button className="primary-next-action" type="button" onClick={runPrimaryAction}>
-          {action.kind === 'salary' ? <Calculator size={16} /> : <ArrowUp size={16} />}
-          {action.primaryLabel}
-        </button>
-        {secondaryActions.map((item) => (
-          <button
-            className="secondary-next-action"
-            type="button"
-            key={item.label}
-            onClick={() => onUseDraft(item.message)}
-          >
-            {item.icon}
-            {item.label}
+    <div className="message-row agent next-action-row">
+      <span className="message-avatar">
+        <Bot size={16} />
+      </span>
+      <div className="next-action-panel" aria-label="지금 할 일">
+        <div className="next-action-copy">
+          <span>지금 할 일</span>
+          <h2>{action.title}</h2>
+          <p>{action.description}</p>
+        </div>
+        <div className="next-action-buttons">
+          <button className="primary-next-action" type="button" onClick={runPrimaryAction}>
+            {action.kind === 'salary' ? <Calculator size={16} /> : <ArrowUp size={16} />}
+            {action.primaryLabel}
           </button>
-        ))}
+          {secondaryActions.map((item) => (
+            <button
+              className="secondary-next-action"
+              type="button"
+              key={item.label}
+              onClick={() => onUseDraft(item.message)}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
-    </section>
+    </div>
   )
 }
 
@@ -969,9 +1029,11 @@ function ProposalCards({
 function ProfileCard({
   profile,
   completed,
+  onEdit,
 }: {
   profile: FinancialProfile
   completed: number
+  onEdit: (field: EditableProfileField) => void
 }): ReactNode {
   const estimatedInput = toPaydayInput(profile)
   const items = getFinancialProfileItems(profile, estimatedInput)
@@ -990,16 +1052,16 @@ function ProfileCard({
         <i style={{ width: `${progressPercent}%` }} />
       </div>
       <div className="profile-next-summary">
-        <span>{profile.monthlySalary === null ? '입력 현황' : '기본 배분 준비'}</span>
+        <span>{profile.monthlySalary === null ? '입력 현황' : '월급 기준 준비'}</span>
         <strong>
           {profile.monthlySalary === null
             ? '월급만 알려주세요'
-            : '나머지는 자동 초안이에요'}
+            : '기본 금액을 채워뒀어요'}
         </strong>
         <p>
           {profile.monthlySalary === null
-            ? '월 실수령액을 입력하면 기본 배분안을 먼저 만들어드려요.'
-            : '생활비, 목표, 투자 조건은 채팅으로 언제든 조정할 수 있어요.'}
+            ? '월급을 입력하면 쓸 돈, 모을 돈, 투자할 돈을 먼저 나눠볼 수 있어요.'
+            : '생활비, 목표, 투자 조건은 여기서 바로 고칠 수 있어요.'}
         </p>
       </div>
       <div className="profile-check-list">
@@ -1019,7 +1081,14 @@ function ProfileCard({
             <strong aria-label={item.isComplete ? undefined : '미입력'}>
               {item.isComplete ? item.value : ''}
             </strong>
-            {item.isDefault && <em>자동</em>}
+            <button
+              className="profile-edit-button"
+              type="button"
+              aria-label={`${item.label} 수정`}
+              onClick={() => onEdit(item.field)}
+            >
+              <SquarePen size={14} />
+            </button>
           </div>
         ))}
       </div>
@@ -1037,7 +1106,7 @@ function ProfileCard({
         <div className="profile-custom-uses">
           <div>
             <span>매달 먼저 나눠둘 사용처</span>
-            <small>대화로 추가하거나 금액을 바꿀 수 있어요.</small>
+            <small>필요하면 위 항목에서 바로 고칠 수 있어요.</small>
           </div>
           <ul>
             {profile.customUses.map((use) => (
@@ -1053,6 +1122,146 @@ function ProfileCard({
         </div>
       )}
     </section>
+  )
+}
+
+function ProfileEditModal({
+  field,
+  profile,
+  onClose,
+  onSave,
+}: {
+  field: EditableProfileField
+  profile: FinancialProfile
+  onClose: () => void
+  onSave: (patch: Partial<FinancialProfile>) => void
+}): ReactNode {
+  const isInvestmentField =
+    field === 'riskProfile' || field === 'investmentHorizon'
+  const [moneyValue, setMoneyValue] = useState(() =>
+    typeof profile[field] === 'number' ? String(profile[field]) : '',
+  )
+  const [textValue, setTextValue] = useState(() =>
+    typeof profile[field] === 'string' ? String(profile[field]) : '',
+  )
+  const [riskProfile, setRiskProfile] = useState<FinancialProfile['riskProfile']>(
+    profile.riskProfile ?? '균형형',
+  )
+  const [investmentHorizon, setInvestmentHorizon] = useState<
+    FinancialProfile['investmentHorizon']
+  >(profile.investmentHorizon ?? '3년 이상')
+  const config = getProfileEditConfig(field)
+
+  function save(): void {
+    if (isInvestmentField) {
+      onSave({ riskProfile, investmentHorizon })
+      return
+    }
+    if (field === 'goalName') {
+      onSave({ goalName: textValue.trim() })
+      return
+    }
+    onSave({ [field]: moneyValue.trim() ? parseMoney(moneyValue) : null })
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="profile-edit-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-edit-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header>
+          <div>
+            <span>직접 입력</span>
+            <h2 id="profile-edit-title">{config.title}</h2>
+            <p>{config.description}</p>
+          </div>
+          <button type="button" aria-label="수정 닫기" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+
+        {isInvestmentField ? (
+          <div className="profile-edit-body">
+            <label>
+              투자 성향
+              <select
+                value={riskProfile ?? '균형형'}
+                onChange={(event) =>
+                  setRiskProfile(event.target.value as NonNullable<FinancialProfile['riskProfile']>)
+                }
+              >
+                <option value="안정형">안정형</option>
+                <option value="균형형">균형형</option>
+                <option value="성장형">성장형</option>
+              </select>
+            </label>
+            <label>
+              투자 기간
+              <select
+                value={investmentHorizon ?? '3년 이상'}
+                onChange={(event) =>
+                  setInvestmentHorizon(
+                    event.target.value as NonNullable<
+                      FinancialProfile['investmentHorizon']
+                    >,
+                  )
+                }
+              >
+                <option value="1년 미만">1년 미만</option>
+                <option value="1~3년">1~3년</option>
+                <option value="3년 이상">3년 이상</option>
+              </select>
+            </label>
+          </div>
+        ) : field === 'goalName' ? (
+          <div className="profile-edit-body">
+            <label>
+              목표 이름
+              <input
+                value={textValue}
+                placeholder="예: 여행 자금"
+                onChange={(event) => setTextValue(event.target.value)}
+              />
+            </label>
+          </div>
+        ) : (
+          <div className="profile-edit-body">
+            <label>
+              금액
+              <div className="profile-money-input">
+                <input
+                  inputMode="numeric"
+                  value={moneyValue ? Number(moneyValue).toLocaleString() : ''}
+                  placeholder="0"
+                  onChange={(event) =>
+                    setMoneyValue(
+                      event.target.value.trim()
+                        ? String(parseMoney(event.target.value))
+                        : '',
+                    )
+                  }
+                />
+                <span>원</span>
+              </div>
+            </label>
+          </div>
+        )}
+
+        <div className="profile-edit-footer">
+          <button type="button" onClick={onClose}>
+            취소
+          </button>
+          <button type="button" onClick={save}>
+            <Check size={15} />
+            저장
+          </button>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -1458,7 +1667,7 @@ function NetSalaryCalculator({
         <div className="calculator-footer">
           <p>
             {inputMethod === 'direct'
-              ? '입력한 금액은 언제든 다시 바꿀 수 있어요.'
+              ? '나중에 월급이 바뀌면 이 화면에서 다시 고칠 수 있어요.'
               : '예상 금액이에요. 실제 급여명세서와 다를 수 있어요.'}
           </p>
           <button
@@ -1588,7 +1797,7 @@ function PlanSection({
         <div>
           <span>PAYDAY PLAN</span>
           <h2>입력한 내용으로 월급을 나눠드려요</h2>
-          <p>월급만 있으면 기본 비율로 먼저 계산하고, 대화로 세부 금액을 바꿀 수 있어요.</p>
+          <p>월급에서 먼저 나갈 돈을 빼고, 남은 돈을 저축과 투자로 나눠요.</p>
         </div>
       </div>
 
@@ -1644,7 +1853,7 @@ function PlanSection({
                   ))}
                 </div>
               ) : (
-                <p>이번 달은 비상금을 먼저 채우는 편이 좋아요.</p>
+                <p>이번 달은 투자보다 비상금을 먼저 채우는 편이 좋아요.</p>
               )}
               <button className="save-button" type="button" onClick={onSave}>
                 {isSaved ? <BadgeCheck size={17} /> : <Check size={17} />}
@@ -1661,8 +1870,7 @@ function PlanSection({
           <div>
             <strong>조금만 더 알려주세요</strong>
             <p>
-              월급만 알려주시면 기본 배분안을 먼저 만들고, 생활비와 투자 기준은
-              대화로 조정할 수 있어요.
+              월급만 알려주시면 생활비, 비상금, 저축, 투자 순서로 먼저 나눠볼게요.
             </p>
           </div>
         </div>
@@ -1738,18 +1946,70 @@ function getProfilePatchEntries(
     ])
 }
 
+function getProfileEditConfig(field: EditableProfileField): {
+  title: string
+  description: string
+} {
+  const configs: Record<EditableProfileField, { title: string; description: string }> = {
+    monthlySalary: {
+      title: '월 실수령액 수정',
+      description: '통장에 들어오는 한 달 월급을 적어주세요.',
+    },
+    essentialExpense: {
+      title: '필수 생활비 수정',
+      description: '월세, 통신비, 식비처럼 꼭 나가는 돈을 적어주세요.',
+    },
+    debtPayment: {
+      title: '카드·부채 수정',
+      description: '이번 달 갚아야 할 카드값이나 대출 상환액을 적어주세요.',
+    },
+    currentEmergencyFund: {
+      title: '현재 비상금 수정',
+      description: '지금 따로 모아둔 비상금이 있다면 적어주세요.',
+    },
+    targetEmergencyFund: {
+      title: '비상금 목표 수정',
+      description: '생활비 몇 달치를 남겨둘지 생각해 목표 금액을 적어주세요.',
+    },
+    goalName: {
+      title: '목표 수정',
+      description: '여행, 이사, 노트북처럼 가까운 목표 이름을 적어주세요.',
+    },
+    goalMonthlyAmount: {
+      title: '목표 저축 수정',
+      description: '이번 달 목표를 위해 따로 모을 금액을 적어주세요.',
+    },
+    flexibleSpending: {
+      title: '여유 생활비 수정',
+      description: '외식, 여행, 취미처럼 지키고 싶은 소비 한도를 적어주세요.',
+    },
+    riskProfile: {
+      title: '투자 조건 수정',
+      description: '감당할 수 있는 변동성과 투자 기간을 골라주세요.',
+    },
+    investmentHorizon: {
+      title: '투자 조건 수정',
+      description: '감당할 수 있는 변동성과 투자 기간을 골라주세요.',
+    },
+  }
+
+  return configs[field]
+}
+
 function getFinancialProfileItems(
   profile: FinancialProfile,
   estimatedInput: ReturnType<typeof toPaydayInput>,
 ): FinancialProfileItem[] {
   return [
     {
+      field: 'monthlySalary',
       label: '월 실수령액',
       value: formatNullableWon(profile.monthlySalary),
       isComplete: profile.monthlySalary !== null,
       isDefault: false,
     },
     {
+      field: 'essentialExpense',
       label: '필수 생활비',
       value: estimatedInput
         ? formatWon(estimatedInput.essentialExpense)
@@ -1759,6 +2019,7 @@ function getFinancialProfileItems(
       isDefault: profile.essentialExpense === null && estimatedInput !== null,
     },
     {
+      field: 'debtPayment',
       label: '카드·부채',
       value: estimatedInput
         ? formatWon(estimatedInput.debtPayment)
@@ -1767,6 +2028,7 @@ function getFinancialProfileItems(
       isDefault: profile.debtPayment === null && estimatedInput !== null,
     },
     {
+      field: 'currentEmergencyFund',
       label: '현재 비상금',
       value: estimatedInput
         ? formatWon(estimatedInput.currentEmergencyFund)
@@ -1777,6 +2039,7 @@ function getFinancialProfileItems(
         profile.currentEmergencyFund === null && estimatedInput !== null,
     },
     {
+      field: 'targetEmergencyFund',
       label: '비상금 목표',
       value: estimatedInput
         ? formatWon(estimatedInput.targetEmergencyFund)
@@ -1787,6 +2050,7 @@ function getFinancialProfileItems(
         profile.targetEmergencyFund === null && estimatedInput !== null,
     },
     {
+      field: 'goalName',
       label: '목표',
       value: estimatedInput?.goalName ?? profile.goalName,
       isComplete:
@@ -1795,6 +2059,7 @@ function getFinancialProfileItems(
         profile.goalName.trim().length === 0 && estimatedInput !== null,
     },
     {
+      field: 'goalMonthlyAmount',
       label: '목표 저축',
       value: estimatedInput
         ? formatWon(estimatedInput.goalMonthlyAmount)
@@ -1805,6 +2070,7 @@ function getFinancialProfileItems(
         profile.goalMonthlyAmount === null && estimatedInput !== null,
     },
     {
+      field: 'flexibleSpending',
       label: '여유 생활비',
       value: estimatedInput
         ? formatWon(estimatedInput.flexibleSpending)
@@ -1815,6 +2081,7 @@ function getFinancialProfileItems(
         profile.flexibleSpending === null && estimatedInput !== null,
     },
     {
+      field: 'riskProfile',
       label: '투자 조건',
       value:
         estimatedInput
@@ -1838,16 +2105,16 @@ function getNextAction(profile: FinancialProfile): NextAction {
       kind: 'salary',
       title: '월 실수령액을 알려주세요',
       description:
-        '월급만 입력해도 생활비, 비상금, 목표 자금, 투자금 초안을 먼저 만들어드려요.',
+        '월급만 넣어도 생활비, 비상금, 목표 자금, 투자금 기준을 바로 잡아볼 수 있어요.',
       primaryLabel: '실수령액 입력하기',
     }
   }
 
   return {
     kind: 'plan',
-    title: '기본 배분안을 확인해 보세요',
+    title: '이번 월급 계획을 볼 수 있어요',
     description:
-      '자주 쓰는 월급 배분 기준으로 먼저 채웠어요. 생활비, 목표, 투자는 대화로 언제든 조정할 수 있어요.',
+      '월급에서 먼저 나갈 돈을 빼고, 남는 금액만 투자금으로 계산했어요.',
     primaryLabel: '계획 보기',
   }
 }
