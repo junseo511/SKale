@@ -87,6 +87,17 @@ const financialProfileSchema = z.object({
 })
 
 type FinancialProfile = z.infer<typeof financialProfileSchema>
+type PaydayProfilePatchValue =
+  | string
+  | number
+  | string[]
+  | Array<{
+      name: string
+      amount: number
+      bucket: 'essential' | 'goal' | 'flexible'
+      note: string
+    }>
+type PaydayProfilePatch = Record<string, PaydayProfilePatchValue>
 
 const monthlySpendingSummarySchema = z.object({
   id: z.string(),
@@ -568,31 +579,32 @@ app.post('/api/payday/chat', async (request, response, next) => {
     }
 
     const { client, model } = createModelClient()
-    const modelResponse = await client.models.generateContent({
-      model,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: [
-                `Current financial profile:\n${JSON.stringify(profile)}`,
-                `\nConfirmed monthly spending summaries:\n${JSON.stringify(monthlySpending)}`,
-                `\nRecent conversation:\n${JSON.stringify(recentMessages)}`,
-                `\nCurrent user message:\n${message || '(no text)'}`,
-                `\nTarget month for the submitted spending data:\n${targetMonth ?? '(not specified)'}`,
-              ].join(''),
-            },
-            ...attachments.map((attachment) => ({
-              inlineData: {
-                mimeType: attachment.mimeType,
-                data: attachment.data,
+    const modelResponse = await retryModelRequest(() =>
+      client.models.generateContent({
+        model,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: [
+                  `Current financial profile:\n${JSON.stringify(profile)}`,
+                  `\nConfirmed monthly spending summaries:\n${JSON.stringify(monthlySpending)}`,
+                  `\nRecent conversation:\n${JSON.stringify(recentMessages)}`,
+                  `\nCurrent user message:\n${message || '(no text)'}`,
+                  `\nTarget month for the submitted spending data:\n${targetMonth ?? '(not specified)'}`,
+                ].join(''),
               },
-            })),
-          ],
-        },
-      ],
-      config: {
+              ...attachments.map((attachment) => ({
+                inlineData: {
+                  mimeType: attachment.mimeType,
+                  data: attachment.data,
+                },
+              })),
+            ],
+          },
+        ],
+        config: {
         systemInstruction: [
           'You are SKale, a conversational payday planning agent.',
           'The user may write in Korean or English. Always write every user-facing natural-language field in Korean, including reply, insight, missingData, appliedFacts, preferences, and category descriptions.',
@@ -640,31 +652,43 @@ app.post('/api/payday/chat', async (request, response, next) => {
         responseJsonSchema: paydayConversationResponseSchema,
         temperature: 0.2,
         maxOutputTokens: 4_000,
-      },
-    })
+        },
+      }),
+    )
     const modelJson = parseModelJson<unknown>(
       readGenerateContentText(modelResponse),
     )
     const result =
       paydayConversationModelResponseValidationSchema.parse(modelJson)
-    const profilePatch = Object.fromEntries(
+    let profilePatch: PaydayProfilePatch = Object.fromEntries(
       Object.entries(result.profilePatch).filter(
         ([key, value]) =>
           value !== null &&
           !(key === 'preferences' && Array.isArray(value) && value.length === 0),
       ),
-    )
-    const visibleMissingData = sanitizeMissingData(
-      result.missingData,
-      profile,
-      profilePatch,
-    )
-    const visibleAppliedFacts = result.appliedFacts.map(replaceInternalFieldNames)
-    const visibleReply = sanitizeReply(
+    ) as PaydayProfilePatch
+    let visibleMissingData = sanitizeMissingData(result.missingData, profile, profilePatch)
+    let visibleAppliedFacts = result.appliedFacts.map(replaceInternalFieldNames)
+    let visibleReply = sanitizeReply(
       replaceInternalFieldNames(result.reply),
       profile,
       profilePatch,
     )
+    const proactiveDetailPlan = createProactiveDetailPlanIfNeeded(
+      message,
+      visibleReply,
+      profile,
+      profilePatch,
+    )
+    if (proactiveDetailPlan) {
+      profilePatch = proactiveDetailPlan.profilePatch
+      visibleReply = proactiveDetailPlan.reply
+      visibleMissingData = []
+      visibleAppliedFacts = [
+        ...visibleAppliedFacts,
+        '저장된 월급 계획을 기준으로 세부 사용처 초안을 만들었어요.',
+      ]
+    }
 
     response.json({
       ...result,
@@ -677,6 +701,11 @@ app.post('/api/payday/chat', async (request, response, next) => {
     })
   } catch (error) {
     if (isEmptyModelTextError(error)) {
+      response.json(createFallbackPaydayResponse(fallbackMessage))
+      return
+    }
+    const status = getErrorStatus(error)
+    if (status !== 401 && status !== 403 && status !== 429) {
       response.json(createFallbackPaydayResponse(fallbackMessage))
       return
     }
@@ -714,7 +743,7 @@ app.post('/api/spending/analyze', async (request, response, next) => {
         ],
       },
     ]
-    const modelResponse = await client.models.generateContent({
+    const modelResponse = await retryModelRequest(() => client.models.generateContent({
       model,
       contents,
       config: {
@@ -735,7 +764,7 @@ app.post('/api/spending/analyze', async (request, response, next) => {
         temperature: 0.1,
         maxOutputTokens: 4_000,
       },
-    })
+    }))
     const analysis = parseModelJson<SpendingOutput>(
       readGenerateContentText(modelResponse),
     )
@@ -777,7 +806,7 @@ app.post('/api/assets/analyze', async (request, response, next) => {
 
     const { client, model } = createModelClient()
     const { input, userFeedback } = parsedRequest.data
-    const modelResponse = await client.models.generateContent({
+    const modelResponse = await retryModelRequest(() => client.models.generateContent({
       model,
       contents: [
         `Financial and asset information:\n${input}`,
@@ -810,7 +839,7 @@ app.post('/api/assets/analyze', async (request, response, next) => {
         temperature: 0.1,
         maxOutputTokens: 8_000,
       },
-    })
+    }))
     const analysis = parseModelJson<{
       proposals: Array<{ confidence: number; [key: string]: unknown }>
       healthStatus: string
@@ -857,7 +886,7 @@ app.post('/api/portfolio/analyze', async (request, response, next) => {
     }
 
     const { client, model } = createModelClient()
-    const modelResponse = await client.models.generateContent({
+    const modelResponse = await retryModelRequest(() => client.models.generateContent({
       model,
       contents: JSON.stringify(parsedRequest.data),
       config: {
@@ -876,7 +905,7 @@ app.post('/api/portfolio/analyze', async (request, response, next) => {
         temperature: 0.15,
         maxOutputTokens: 4_000,
       },
-    })
+    }))
     const analysis = parseModelJson<Record<string, unknown>>(
       readGenerateContentText(modelResponse),
     )
@@ -901,7 +930,7 @@ app.post('/api/stocks/analyze', async (request, response, next) => {
     }
 
     const { client, model } = createModelClient()
-    const modelResponse = await client.models.generateContent({
+    const modelResponse = await retryModelRequest(() => client.models.generateContent({
       model,
       contents: JSON.stringify(parsedRequest.data),
       config: {
@@ -923,7 +952,7 @@ app.post('/api/stocks/analyze', async (request, response, next) => {
         temperature: 0.1,
         maxOutputTokens: 5_000,
       },
-    })
+    }))
     const analysis = parseModelJson<{
       ticker: string | null
       [key: string]: unknown
@@ -985,7 +1014,10 @@ app.use((error: unknown, _request: Request, response: Response, _next: NextFunct
     name: error instanceof Error ? error.name : 'UnknownError',
     status,
   })
-  response.status(500).json({ message: 'AI 분석 요청을 처리하지 못했습니다.' })
+  response.status(500).json({
+    message:
+      'AI 답변을 완성하지 못했어요. 잠시 후 다시 시도하거나 방금 요청을 조금 짧게 보내주세요.',
+  })
 })
 
 app.listen(port, () => {
@@ -1003,6 +1035,25 @@ function createModelClient(): { client: GoogleGenAI; model: string } {
     client: new GoogleGenAI({ apiKey }),
     model: process.env.AI_MODEL ?? DEFAULT_MODEL,
   }
+}
+
+async function retryModelRequest<T>(request: () => Promise<T>): Promise<T> {
+  try {
+    return await request()
+  } catch (error) {
+    const status = getErrorStatus(error)
+    if (status === 401 || status === 403 || status === 429) {
+      throw error
+    }
+    await delay(450)
+    return request()
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds)
+  })
 }
 
 function readGenerateContentText(response: unknown): string | undefined {
@@ -1105,6 +1156,135 @@ function createFallbackPaydayResponse(message: string): {
     missingData: [],
     appliedFacts: [],
   }
+}
+
+function createProactiveDetailPlanIfNeeded(
+  message: string,
+  reply: string,
+  profile: FinancialProfile,
+  profilePatch: PaydayProfilePatch,
+): { reply: string; profilePatch: PaydayProfilePatch } | null {
+  if (!isDetailPlanningRequest(message) || !asksForDetailAmounts(reply)) {
+    return null
+  }
+
+  const customUses = createDetailPlanCustomUses(profile)
+  if (customUses.length === 0) {
+    return null
+  }
+
+  return {
+    reply: [
+      '먼저 초안으로 세부 사용 계획을 잡아볼게요.',
+      describeCustomUses(customUses),
+      '원하는 항목만 말해주시면 그 부분만 다시 조정하겠습니다.',
+    ].join('\n\n'),
+    profilePatch: {
+      ...profilePatch,
+      customUses,
+    },
+  }
+}
+
+function isDetailPlanningRequest(message: string): boolean {
+  const normalizedMessage = normalizeKoreanText(message)
+  return (
+    normalizedMessage.includes('세부사용처') ||
+    normalizedMessage.includes('세부계획') ||
+    normalizedMessage.includes('각범주') ||
+    normalizedMessage.includes('어디에얼마')
+  )
+}
+
+function asksForDetailAmounts(reply: string): boolean {
+  const normalizedReply = normalizeKoreanText(reply)
+  return (
+    /알려주|말해주|입력해|정해주|얼마/.test(reply) &&
+    (
+      normalizedReply.includes('각항목') ||
+      normalizedReply.includes('항목별') ||
+      normalizedReply.includes('얼마') ||
+      normalizedReply.includes('사용할지')
+    )
+  )
+}
+
+function createDetailPlanCustomUses(
+  profile: FinancialProfile,
+): Array<{ name: string; amount: number; bucket: 'essential' | 'goal' | 'flexible'; note: string }> {
+  if (profile.monthlySalary === null) {
+    return profile.customUses
+  }
+
+  const salary = profile.monthlySalary
+  const essentialExpense = profile.essentialExpense ?? Math.round(salary * 0.5)
+  const goalMonthlyAmount = profile.goalMonthlyAmount ?? Math.round(salary * 0.1)
+  const flexibleSpending = profile.flexibleSpending ?? Math.round(salary * 0.1)
+  const existingBuckets = new Set(profile.customUses.map((use) => use.bucket))
+  const customUses = [...profile.customUses]
+
+  if (essentialExpense > 0 && !existingBuckets.has('essential')) {
+    const fixedAmount = Math.round(essentialExpense * 0.7)
+    customUses.push(
+      {
+        name: '주거·통신 등 고정비',
+        amount: fixedAmount,
+        bucket: 'essential',
+        note: '매달 꼭 나가는 비용을 먼저 묶어 둔 초안이에요.',
+      },
+      {
+        name: '식비·교통 등 생활비',
+        amount: essentialExpense - fixedAmount,
+        bucket: 'essential',
+        note: '일상 생활에 필요한 변동 비용 초안이에요.',
+      },
+    )
+  }
+
+  if (goalMonthlyAmount > 0 && !existingBuckets.has('goal')) {
+    customUses.push({
+      name: profile.goalName.trim() || '목표 자금',
+      amount: goalMonthlyAmount,
+      bucket: 'goal',
+      note: '투자금과 섞이지 않게 따로 둘 목표 자금이에요.',
+    })
+  }
+
+  if (flexibleSpending > 0 && !existingBuckets.has('flexible')) {
+    const lifestyleAmount = Math.round(flexibleSpending * 0.6)
+    customUses.push(
+      {
+        name: '외식·카페',
+        amount: lifestyleAmount,
+        bucket: 'flexible',
+        note: '줄이고 싶지 않은 생활 만족 지출 초안이에요.',
+      },
+      {
+        name: '취미·여행',
+        amount: flexibleSpending - lifestyleAmount,
+        bucket: 'flexible',
+        note: '이번 달 자유롭게 쓸 수 있는 여유 지출 초안이에요.',
+      },
+    )
+  }
+
+  return customUses
+}
+
+function describeCustomUses(
+  customUses: Array<{ name: string; amount: number; bucket: 'essential' | 'goal' | 'flexible' }>,
+): string {
+  return customUses
+    .map((use) => `- ${formatCustomUseBucketForReply(use.bucket)}: ${use.name} ${use.amount.toLocaleString()}원`)
+    .join('\n')
+}
+
+function formatCustomUseBucketForReply(bucket: 'essential' | 'goal' | 'flexible'): string {
+  return {
+    essential: '필수 생활비',
+    goal: '목표 자금',
+    flexible: '여유 생활비',
+  }[bucket]
 }
 
 function sanitizeMissingData(

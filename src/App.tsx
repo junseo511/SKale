@@ -1,6 +1,5 @@
 import {
   ArrowUp,
-  BadgeCheck,
   Bot,
   Calculator,
   CalendarDays,
@@ -166,7 +165,6 @@ function App(): ReactNode {
     useState<PaydayConversationResponse | null>(null)
   const [isReplying, setIsReplying] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
-  const [isPlanSaved, setIsPlanSaved] = useState(false)
   const [isSalaryCalculatorOpen, setIsSalaryCalculatorOpen] =
     useState(false)
   const [editingProfileField, setEditingProfileField] =
@@ -215,6 +213,11 @@ function App(): ReactNode {
     () => (paydayInput ? createPaydayPlan(paydayInput) : null),
     [paydayInput],
   )
+  useEffect(() => {
+    if (plan) {
+      planRepository.save(plan)
+    }
+  }, [plan])
   const completedProfileFields = countCompletedProfileFields(profile)
   const nextAction = getNextAction(profile, plan)
   const hasUserMessage = messages.some((message) => message.role === 'user')
@@ -278,7 +281,6 @@ function App(): ReactNode {
     setPendingResponse(null)
     setErrorMessage('')
     setIsReplying(true)
-    setIsPlanSaved(false)
 
     abortControllerReference.current?.abort()
     const abortController = new AbortController()
@@ -364,7 +366,6 @@ function App(): ReactNode {
         ? { ...currentResponse, profilePatch: {} }
         : currentResponse,
     )
-    setIsPlanSaved(false)
   }
 
   function applyMonthlySpendingProposal(isReviewed = false): void {
@@ -387,14 +388,6 @@ function App(): ReactNode {
         ? { ...currentResponse, monthlySpendingProposal: undefined }
         : currentResponse,
     )
-  }
-
-  function savePlan(): void {
-    if (!plan) {
-      return
-    }
-    planRepository.save(plan)
-    setIsPlanSaved(true)
   }
 
   function updateMonthlySpendingSummary(
@@ -433,7 +426,6 @@ function App(): ReactNode {
     setAttachments([])
     setPendingResponse(null)
     setErrorMessage('')
-    setIsPlanSaved(false)
   }
 
   async function addAttachments(files: FileList | null): Promise<void> {
@@ -786,8 +778,6 @@ function App(): ReactNode {
 
         <PlanSection
           plan={plan}
-          isSaved={isPlanSaved}
-          onSave={savePlan}
           stockResearchRequest={stockResearchRequest}
           onUseDraft={(message) => {
             setDraft(message)
@@ -818,7 +808,6 @@ function App(): ReactNode {
               },
             ])
             closeSalaryCalculator()
-            setIsPlanSaved(false)
           }}
         />
       )}
@@ -831,7 +820,6 @@ function App(): ReactNode {
           onSave={(patch) => {
             setProfile((currentProfile) => ({ ...currentProfile, ...patch }))
             setEditingProfileField(null)
-            setIsPlanSaved(false)
           }}
         />
       )}
@@ -1895,14 +1883,10 @@ function CountField({
 
 function PlanSection({
   plan,
-  isSaved,
-  onSave,
   stockResearchRequest,
   onUseDraft,
 }: {
   plan: PaydayPlan | null
-  isSaved: boolean
-  onSave: () => void
   stockResearchRequest: string
   onUseDraft: (message: string) => void
 }): ReactNode {
@@ -1924,13 +1908,22 @@ function PlanSection({
               <h3>{plan.headline}</h3>
             </div>
             <div>
-              <small>이번 달 투자 가능 금액</small>
+              <small>자동 계산된 투자 가능 금액</small>
               <strong>{formatWon(plan.availableInvestmentAmount)}</strong>
             </div>
           </div>
           <div className="plan-content">
             <div className="allocation-summary">
               <AllocationChart allocations={plan.allocations} />
+              <div className="allocation-plan-toolbar">
+                <button
+                  type="button"
+                  onClick={() => onUseDraft(createPlanDetailDraft(plan))}
+                >
+                  세부 계획 함께 세우기
+                </button>
+                <span>각 범주의 사용처와 금액을 한 번에 조정해요.</span>
+              </div>
               {plan.allocations.map((allocation) => {
                 const visibleDetails = getVisibleAllocationDetails(allocation)
 
@@ -1950,13 +1943,6 @@ function PlanSection({
                           ))}
                         </ul>
                       )}
-                      <button
-                        className="allocation-plan-button"
-                        type="button"
-                        onClick={() => onUseDraft(createAllocationPlanningDraft(allocation))}
-                      >
-                        세부 계획하기
-                      </button>
                     </div>
                     <b>{formatWon(allocation.amount)}</b>
                   </article>
@@ -1998,10 +1984,6 @@ function PlanSection({
               ) : (
                 <p>이번 달은 투자보다 비상금을 먼저 채우는 편이 좋아요.</p>
               )}
-              <button className="save-button" type="button" onClick={onSave}>
-                {isSaved ? <BadgeCheck size={17} /> : <Check size={17} />}
-                {isSaved ? '저장했어요' : '이 계획 저장하기'}
-              </button>
             </aside>
           </div>
         </div>
@@ -2515,8 +2497,13 @@ function getVisibleAllocationDetails(
   return allocation.details
 }
 
-function createAllocationPlanningDraft(allocation: SalaryAllocation): string {
-  return `${allocation.label} ${formatWon(allocation.amount)}을 실제로 어디에 얼마씩 쓸지 세부 계획을 같이 세워줘. 이미 정해진 항목이 있으면 유지하고, 부족한 부분은 합리적인 초안으로 먼저 나눠줘.`
+function createPlanDetailDraft(plan: PaydayPlan): string {
+  const allocations = plan.allocations
+    .filter((allocation) => allocation.amount > 0)
+    .map((allocation) => `${allocation.label} ${formatWon(allocation.amount)}`)
+    .join(', ')
+
+  return `이번 월급 계획의 세부 사용처를 같이 세워줘. 현재 배분은 ${allocations}이야. 이미 정한 항목은 유지하고, 비어 있는 범주는 합리적인 초안으로 먼저 나눠줘.`
 }
 
 function hasVisibleProposal(response: PaydayConversationResponse): boolean {
