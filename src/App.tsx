@@ -72,6 +72,7 @@ import {
   createPaydayPlan,
   type PaydayPlan,
   type PortfolioAllocation,
+  type RiskProfile,
   type SalaryAllocation,
 } from './domain/paydayPlan'
 import './App.css'
@@ -141,13 +142,13 @@ function App(): ReactNode {
   )
   const [profile, setProfile] = useState<FinancialProfile>(() => {
     const savedProfile = savedWorkspace?.profile
-    return {
+    return normalizeFinancialProfile({
       ...EMPTY_FINANCIAL_PROFILE,
       ...savedProfile,
       goalName: savedProfile?.goalName ?? EMPTY_FINANCIAL_PROFILE.goalName,
       preferences: savedProfile?.preferences ?? [],
       customUses: savedProfile?.customUses ?? [],
-    }
+    })
   })
   const [monthlySpending, setMonthlySpending] = useState<
     MonthlySpendingSummary[]
@@ -187,6 +188,10 @@ function App(): ReactNode {
     completedProfileFields > 0 ||
     pendingResponse !== null ||
     messages.some((message) => message.role === 'user')
+  const shouldShowNextAction =
+    !messages.some((message) => message.role === 'user') &&
+    !pendingResponse &&
+    !isReplying
   const quickMessages = [
     {
       prompt: `${Number(targetMonth.split('-')[1])}월 카드 내역을 기준으로 필수지출과 선택지출을 나눠줘.`,
@@ -506,7 +511,7 @@ function App(): ReactNode {
               {messages.map((message) => (
                 <MessageBubble message={message} key={message.id} />
               ))}
-              {!pendingResponse && !isReplying && (
+              {shouldShowNextAction && (
                 <NextActionPanel
                   action={nextAction}
                   targetMonth={targetMonth}
@@ -549,7 +554,6 @@ function App(): ReactNode {
               <div className="suggestion-section">
                 <div className="starter-heading">
                   <span>이렇게 시작해 보세요</span>
-                  <p>누르면 입력창에 문장이 채워져요.</p>
                 </div>
                 <div className="quick-message-list" aria-label="추천 질문">
                   <button
@@ -601,8 +605,8 @@ function App(): ReactNode {
                       onClick={() => setDraft(stockResearchRequest)}
                     >
                       {plan && plan.availableInvestmentAmount > 0
-                        ? '후보 보기'
-                        : '계산하기'}
+                        ? '종목 조사하기'
+                        : '먼저 계산하기'}
                       <ChevronRight size={16} />
                     </button>
                   </div>
@@ -705,7 +709,7 @@ function App(): ReactNode {
 
             <p className="privacy-copy">
               <LockKeyhole size={13} />
-              돈 이야기는 기준을 같이 살펴볼게요. 사진을 올릴 땐 민감한 개인정보를 가려주세요.
+              돈의 흐름을 차근차근 정리해 볼게요. 사진을 올릴 땐 민감한 개인정보를 가려주세요.
             </p>
           </section>
 
@@ -1188,7 +1192,7 @@ function ProfileEditModal({
   const [textValue, setTextValue] = useState(() =>
     typeof profile[field] === 'string' ? String(profile[field]) : '',
   )
-  const [riskProfile, setRiskProfile] = useState<FinancialProfile['riskProfile']>(
+  const [riskProfile, setRiskProfile] = useState<RiskProfile>(
     profile.riskProfile ?? '균형형',
   )
   const [investmentHorizon, setInvestmentHorizon] = useState<
@@ -1233,14 +1237,14 @@ function ProfileEditModal({
             <label>
               투자 성향
               <select
-                value={riskProfile ?? '균형형'}
+                value={riskProfile}
                 onChange={(event) =>
-                  setRiskProfile(event.target.value as NonNullable<FinancialProfile['riskProfile']>)
+                  setRiskProfile(event.target.value as RiskProfile)
                 }
               >
                 <option value="안정형">안정형</option>
                 <option value="균형형">균형형</option>
-                <option value="성장형">성장형</option>
+                <option value="공격형">공격형</option>
               </select>
             </label>
             <label>
@@ -1469,13 +1473,6 @@ function MonthlyHistoryCard({
               </div>
             )}
             <div className="history-meta">
-              <span>
-                {selectedSummary.source === 'text'
-                  ? '텍스트'
-                  : selectedSummary.source === 'image'
-                    ? '사진'
-                    : '텍스트+사진'}
-              </span>
               {selectedSummary.needReview && <span>확인 필요</span>}
               <button
                 type="button"
@@ -2456,6 +2453,18 @@ function createMonthlySpendingClarification(
   ].join(', ')
 
   return `${formatMonth(summary.month)} 사용 요약을 확인했어요. 지금 읽은 금액은 ${amounts}입니다. 틀린 부분만 이렇게 고쳐주세요: `
+}
+
+function normalizeFinancialProfile(profile: FinancialProfile): FinancialProfile {
+  const legacyRiskProfile = profile.riskProfile as RiskProfile | '성장형' | null
+
+  return {
+    ...profile,
+    riskProfile:
+      legacyRiskProfile === '성장형'
+        ? '공격형'
+        : legacyRiskProfile,
+  }
 }
 
 function normalizeConversationMessages(

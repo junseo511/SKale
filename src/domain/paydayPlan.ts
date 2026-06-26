@@ -1,4 +1,4 @@
-export type RiskProfile = '안정형' | '균형형' | '성장형'
+export type RiskProfile = '안정형' | '균형형' | '공격형'
 export type InvestmentHorizon = '1년 미만' | '1~3년' | '3년 이상'
 export type CustomSalaryUseBucket = 'essential' | 'goal' | 'flexible'
 
@@ -223,7 +223,7 @@ function createPortfolio(
           ['광범위 주식 ETF', 40, '시장 전체에 분산하는 핵심 자산'],
           ['성장 자산', 10, '장기 성장 기회를 위한 제한된 비중'],
         ]
-      : riskProfile === '성장형'
+      : riskProfile === '공격형'
         ? [
             ['현금성·단기채', 10, '하락 시 대응할 최소 대기 자금'],
             ['광범위 주식 ETF', 55, '포트폴리오의 분산된 중심'],

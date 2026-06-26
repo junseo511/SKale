@@ -74,7 +74,11 @@ const financialProfileSchema = z.object({
   goalName: z.string().max(200),
   goalMonthlyAmount: z.number().nonnegative().nullable(),
   flexibleSpending: z.number().nonnegative().nullable(),
-  riskProfile: z.enum(['안정형', '균형형', '성장형']).nullable(),
+  riskProfile: z
+    .preprocess(
+      (value) => (value === '성장형' ? '공격형' : value),
+      z.enum(['안정형', '균형형', '공격형']).nullable(),
+    ),
   investmentHorizon: z
     .enum(['1년 미만', '1~3년', '3년 이상'])
     .nullable(),
@@ -110,8 +114,10 @@ const paydayConversationModelResponseValidationSchema = z
         goalMonthlyAmount: z.number().nonnegative().nullable(),
         flexibleSpending: z.number().nonnegative().nullable(),
         riskProfile: z
-          .enum(['안정형', '균형형', '성장형'])
-          .nullable(),
+          .preprocess(
+            (value) => (value === '성장형' ? '공격형' : value),
+            z.enum(['안정형', '균형형', '공격형']).nullable(),
+          ),
         investmentHorizon: z
           .enum(['1년 미만', '1~3년', '3년 이상'])
           .nullable(),
@@ -344,7 +350,7 @@ const paydayConversationResponseSchema = {
         flexibleSpending: { type: ['number', 'null'], minimum: 0 },
         riskProfile: {
           type: ['string', 'null'],
-          enum: ['안정형', '균형형', '성장형', null],
+          enum: ['안정형', '균형형', '공격형', null],
         },
         investmentHorizon: {
           type: ['string', 'null'],
@@ -556,6 +562,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
           'You are SKale, a conversational payday planning agent.',
           'The user may write in Korean or English. Always write every user-facing natural-language field in Korean, including reply, insight, missingData, appliedFacts, preferences, and category descriptions.',
           'Keep the Korean conversation concise and natural. Confirm one financial-profile item or preference at a time.',
+          'Use these investment risk labels in user-facing Korean: 안정형, 균형형, 공격형. If the user says 성장형, understand it as 공격형 and store 공격형.',
           'The assistant may answer general money-related questions, including questions about salary, spending habits, budgeting, saving, emergency funds, debt, retirement accounts, asset allocation, investing principles, risk, diversification, valuation, and portfolio construction.',
           'When answering a money-related question that is not just data extraction, briefly add a Korean section titled "기준으로 보면" when useful. Cite well-known institutions or investors by name only for broadly established principles, such as OECD/financial literacy guidance, SEC investor education, FINRA investor education, Vanguard diversification and long-term investing principles, Bogleheads/John Bogle low-cost diversified indexing, Warren Buffett long-term business-quality and margin-of-safety thinking, Benjamin Graham margin of safety, Howard Marks risk awareness and cycles, Ray Dalio diversification, or Morgan Housel behavior-first personal finance.',
           'Do not fabricate exact quotes, dates, reports, recent market views, current rankings, current prices, financial results, tax rules, or legal/regulatory details. If the user asks for latest/current information or exact citations that were not provided, say in Korean that live verification is needed and give only a general framework.',
@@ -576,6 +583,8 @@ app.post('/api/payday/chat', async (request, response, next) => {
           'Treat rent, maintenance fees, telecommunications, insurance, and recurring transportation needed for daily life as essential expenses.',
           'Create monthlySpendingProposal only when the current message or attachments actually contain prior spending data. Otherwise return null.',
           'Do not overwrite an already confirmed profile value unless the user clearly asks to change it.',
+          'Do not ask again for a profile value that is already present in Current financial profile or that the user clearly provided in Recent conversation. Use the saved value and move on.',
+          'Do not expose internal field names such as riskProfile or investmentHorizon in reply, missingData, or appliedFacts. Use natural Korean labels such as 투자 성향 or 투자 기간.',
           'The application code calculates salary allocation and investable cash. Do not claim that you finalized those amounts.',
           'When the user asks you to construct a stock portfolio, treat Korea, the United States, or both as a user-selected market constraint rather than the main recommendation.',
           'Construct a Korean-language reference portfolio for the selected market using the provided investable amount, risk profile, investment horizon, and preferences. Show allocations and amounts by diversified ETF or stock-candidate role, explain why each position exists, and list major risks.',
@@ -606,10 +615,24 @@ app.post('/api/payday/chat', async (request, response, next) => {
           !(key === 'preferences' && Array.isArray(value) && value.length === 0),
       ),
     )
+    const visibleMissingData = sanitizeMissingData(
+      result.missingData,
+      profile,
+      profilePatch,
+    )
+    const visibleAppliedFacts = result.appliedFacts.map(replaceInternalFieldNames)
+    const visibleReply = sanitizeReply(
+      replaceInternalFieldNames(result.reply),
+      profile,
+      profilePatch,
+    )
 
     response.json({
       ...result,
+      reply: visibleReply,
       profilePatch,
+      missingData: visibleMissingData,
+      appliedFacts: visibleAppliedFacts,
       monthlySpendingProposal:
         result.monthlySpendingProposal ?? undefined,
     })
@@ -1043,6 +1066,90 @@ function createFallbackPaydayResponse(message: string): {
     missingData: [],
     appliedFacts: [],
   }
+}
+
+function sanitizeMissingData(
+  missingData: string[],
+  profile: FinancialProfile,
+  profilePatch: Record<string, unknown>,
+): string[] {
+  const completedTerms = getCompletedProfileTerms(profile, profilePatch)
+  const sanitizedItems = missingData
+    .map(replaceInternalFieldNames)
+    .filter((item) => {
+      const normalizedItem = normalizeKoreanText(item)
+      return !completedTerms.some((term) => normalizedItem.includes(term))
+    })
+
+  return [...new Set(sanitizedItems)]
+}
+
+function sanitizeReply(
+  reply: string,
+  profile: FinancialProfile,
+  profilePatch: Record<string, unknown>,
+): string {
+  const completedTerms = getCompletedProfileTerms(profile, profilePatch)
+  const sentences = reply
+    .split(/(?<=[.?!。！？])\s+/)
+    .filter((sentence) => {
+      const normalizedSentence = normalizeKoreanText(sentence)
+      const asksKnownField =
+        /[?？]|알려주|확인해주|있으신가요|인가요|어느정도|얼마/.test(sentence) &&
+        completedTerms.some((term) => normalizedSentence.includes(term))
+      return !asksKnownField
+    })
+
+  const sanitizedReply = sentences.join(' ').trim()
+  return sanitizedReply || '저장된 정보를 반영해 다음 단계로 이어갈게요.'
+}
+
+function getCompletedProfileTerms(
+  profile: FinancialProfile,
+  profilePatch: Record<string, unknown>,
+): string[] {
+  const profileEntries: Array<[keyof FinancialProfile, string[], unknown]> = [
+    ['monthlySalary', ['월실수령액', '월급', '급여'], profile.monthlySalary],
+    ['essentialExpense', ['필수생활비', '필수지출'], profile.essentialExpense],
+    ['debtPayment', ['대출상환액', '대출금', '상환중인대출', '카드부채'], profile.debtPayment],
+    ['currentEmergencyFund', ['현재비상금', '비상자금', '비상금'], profile.currentEmergencyFund],
+    ['targetEmergencyFund', ['비상금목표', '목표비상금', '비상자금목표'], profile.targetEmergencyFund],
+    ['goalName', ['목표자금', '모으고싶은목표', '저축목표'], profile.goalName.trim()],
+    ['goalMonthlyAmount', ['목표저축', '매월저축', '저축금액'], profile.goalMonthlyAmount],
+    ['flexibleSpending', ['여유생활비', '선택지출'], profile.flexibleSpending],
+    ['riskProfile', ['투자성향', '위험성향', '위험감수'], profile.riskProfile],
+    ['investmentHorizon', ['투자기간', '투자기간'], profile.investmentHorizon],
+  ]
+
+  return profileEntries
+    .filter(([key, , value]) => hasKnownProfileValue(value) || profilePatch[key] !== undefined)
+    .flatMap(([, terms]) => terms)
+}
+
+function hasKnownProfileValue(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return false
+  }
+  return typeof value !== 'string' || value.trim().length > 0
+}
+
+function replaceInternalFieldNames(value: string): string {
+  return value
+    .replaceAll('riskProfile', '투자 성향')
+    .replaceAll('investmentHorizon', '투자 기간')
+    .replaceAll('monthlySalary', '월 실수령액')
+    .replaceAll('essentialExpense', '필수 생활비')
+    .replaceAll('debtPayment', '대출 상환액')
+    .replaceAll('currentEmergencyFund', '현재 비상금')
+    .replaceAll('targetEmergencyFund', '비상금 목표')
+    .replaceAll('goalName', '목표 자금')
+    .replaceAll('goalMonthlyAmount', '목표 저축액')
+    .replaceAll('flexibleSpending', '여유 생활비')
+    .replaceAll('성장형', '공격형')
+}
+
+function normalizeKoreanText(value: string): string {
+  return value.replace(/[\s·_\-()/]/g, '')
 }
 
 function validateImageSizes(images: z.infer<typeof imageAttachmentSchema>[]): void {

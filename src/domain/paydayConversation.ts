@@ -89,7 +89,10 @@ const financialProfilePatchSchema = z
     goalName: z.string().max(200).optional(),
     goalMonthlyAmount: z.number().nonnegative().optional(),
     flexibleSpending: z.number().nonnegative().optional(),
-    riskProfile: z.enum(['안정형', '균형형', '성장형']).optional(),
+    riskProfile: z
+      .enum(['안정형', '균형형', '공격형', '성장형'])
+      .transform((value) => (value === '성장형' ? '공격형' : value))
+      .optional(),
     investmentHorizon: z
       .enum(['1년 미만', '1~3년', '3년 이상'])
       .optional(),
