@@ -2274,6 +2274,7 @@ function getProfilePatchEntries(
   return (Object.entries(patch) as Array<
     [keyof FinancialProfilePatch, FinancialProfilePatch[keyof FinancialProfilePatch]]
   >)
+    .filter(([, value]) => !(typeof value === 'string' && value.trim().length === 0))
     .filter(([key]) => key !== 'customUses')
     .map(([key, value]) => [
       labels[key],

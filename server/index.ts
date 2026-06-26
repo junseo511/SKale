@@ -578,6 +578,15 @@ app.post('/api/payday/chat', async (request, response, next) => {
       return
     }
 
+    const deterministicDetailPlan = createDeterministicDetailPlanResponse(
+      message,
+      profile,
+    )
+    if (deterministicDetailPlan) {
+      response.json(deterministicDetailPlan)
+      return
+    }
+
     const { client, model } = createModelClient()
     const modelResponse = await retryModelRequest(() =>
       client.models.generateContent({
@@ -664,6 +673,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
       Object.entries(result.profilePatch).filter(
         ([key, value]) =>
           value !== null &&
+          !(typeof value === 'string' && value.trim().length === 0) &&
           !(key === 'preferences' && Array.isArray(value) && value.length === 0),
       ),
     ) as PaydayProfilePatch
@@ -1140,7 +1150,7 @@ function createFallbackPaydayResponse(message: string): {
   if (hasSpendingSummaryRequest) {
     return {
       reply:
-        '카드 내역 텍스트나 사진을 보내주시면 필수지출과 선택지출로 나눠볼게요.',
+        '카드 내역 텍스트나 사진을 보내주시면 자료 월을 확인하고 카테고리별 지출 분포로 정리해볼게요.',
       profilePatch: {},
       monthlySpendingProposal: undefined,
       missingData: ['카드 내역 텍스트 또는 사진'],
@@ -1155,6 +1165,56 @@ function createFallbackPaydayResponse(message: string): {
     monthlySpendingProposal: undefined,
     missingData: [],
     appliedFacts: [],
+  }
+}
+
+function createDeterministicDetailPlanResponse(
+  message: string,
+  profile: FinancialProfile,
+): {
+  reply: string
+  profilePatch: PaydayProfilePatch
+  monthlySpendingProposal: undefined
+  missingData: string[]
+  appliedFacts: string[]
+} | null {
+  if (!isDetailPlanningRequest(message)) {
+    return null
+  }
+
+  if (profile.monthlySalary === null) {
+    return {
+      reply:
+        '세부 사용 계획을 만들려면 먼저 월 실수령액이 필요해요. 월급이 들어오는 금액만 알려주시면 바로 범주별 초안을 잡겠습니다.',
+      profilePatch: {},
+      monthlySpendingProposal: undefined,
+      missingData: ['월 실수령액'],
+      appliedFacts: [],
+    }
+  }
+
+  const customUses = createDetailPlanCustomUses(profile)
+  if (customUses.length === 0) {
+    return {
+      reply:
+        '이미 등록된 세부 사용처를 기준으로 이번 월급 계획에 반영해둘게요. 바꾸고 싶은 항목만 말해주세요.',
+      profilePatch: {},
+      monthlySpendingProposal: undefined,
+      missingData: [],
+      appliedFacts: ['등록된 세부 사용처가 이미 있어요.'],
+    }
+  }
+
+  return {
+    reply: [
+      '좋아요. 저장된 월급 계획을 기준으로 먼저 세부 사용처 초안을 잡았어요.',
+      describeCustomUses(customUses),
+      '이대로 반영해두고, 마음에 안 드는 항목만 말해주시면 그 부분만 다시 조정할게요.',
+    ].join('\n\n'),
+    profilePatch: { customUses },
+    monthlySpendingProposal: undefined,
+    missingData: [],
+    appliedFacts: ['월급 계획의 배분 금액을 기준으로 세부 사용처 초안을 만들었어요.'],
   }
 }
 
