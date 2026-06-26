@@ -231,7 +231,7 @@ function App(): ReactNode {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : 'Agent와 대화하지 못했습니다.',
+          : '답변을 가져오지 못했어요. 다시 시도해 주세요.',
       )
     } finally {
       setIsReplying(false)
@@ -348,7 +348,7 @@ function App(): ReactNode {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : '이미지를 읽지 못했습니다.',
+          : '이미지를 읽지 못했어요. 글자가 잘 보이는 사진으로 다시 올려주세요.',
       )
     }
   }
@@ -356,7 +356,7 @@ function App(): ReactNode {
   return (
     <div className="app-shell">
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="SKale 처음으로">
+        <a className="brand" href="#top" aria-label="SKale 홈으로">
           <span className="brand-symbol">S</span>
           <span>SKale</span>
         </a>
@@ -364,7 +364,7 @@ function App(): ReactNode {
           <button
             className="icon-button"
             type="button"
-            aria-label="대화와 프로필 초기화"
+            aria-label="대화와 입력 내용 초기화"
             onClick={resetWorkspace}
           >
             <RotateCcw size={17} />
@@ -392,20 +392,20 @@ function App(): ReactNode {
           <div className="intro-principles">
             <Principle
               icon={<FileText />}
-              title="지난 소비 확인"
-              text="간편하게 등록하고"
+              title="지난 소비 보기"
+              text="내역만 가볍게 등록해요"
             />
             <ChevronRight size={18} />
             <Principle
               icon={<UserRound />}
-              title="나만의 기준"
-              text="줄이고 싶지 않은 지출"
+              title="내 기준 정하기"
+              text="줄이고 싶지 않은 지출을 남겨요"
             />
             <ChevronRight size={18} />
             <Principle
               icon={<PiggyBank />}
               title="월급 나누기"
-              text="사용할 돈부터 투자까지"
+              text="생활비부터 투자금까지 정리해요"
             />
           </div>
         </section>
@@ -672,7 +672,7 @@ function App(): ReactNode {
               {
                 id: crypto.randomUUID(),
                 role: 'agent',
-                content: `계산한 예상 월 실수령액 ${formatWon(monthlyNetSalary)}을 재무 프로필에 반영했어요.`,
+                content: `계산한 예상 월 실수령액 ${formatWon(monthlyNetSalary)}을 내 정보에 반영했어요.`,
                 createdAt: new Date().toISOString(),
                 status: 'sent',
                 attachments: [],
@@ -891,7 +891,7 @@ function ProposalCards({
             </span>
             <button type="button" onClick={() => onApplyMonthlySpending()}>
               <Check size={14} />
-              {spendingProposal.needReview ? '일단 추가' : '월 기록에 추가'}
+              {spendingProposal.needReview ? '임시 추가' : '기록 추가'}
             </button>
           </div>
           <div className="spending-proposal-grid">
@@ -920,18 +920,18 @@ function ProposalCards({
             <div className="proposal-review-assist">
               <div>
                 <CircleAlert size={14} />
-                <span>이미지나 금액이 불확실해 확인이 필요해요.</span>
+                <span>읽은 금액이 맞는지만 확인해 주세요.</span>
               </div>
               <button type="button" onClick={() => onApplyMonthlySpending(true)}>
                 <Check size={13} />
-                맞아요, 추가
+                맞아요
               </button>
               <button
                 type="button"
                 onClick={() => onStartMonthlySpendingReview(spendingProposal)}
               >
                 <MessageCircleMore size={13} />
-                정정해서 보내기
+                고쳐서 보내기
               </button>
             </div>
           )}
@@ -942,7 +942,7 @@ function ProposalCards({
         <article className="response-context">
           {response.appliedFacts.length > 0 && (
             <div>
-              <strong>Agent가 확인한 내용</strong>
+              <strong>확인한 내용</strong>
               <ul>
                 {response.appliedFacts.map((fact) => (
                   <li key={fact}>{fact}</li>
@@ -952,7 +952,7 @@ function ProposalCards({
           )}
           {response.missingData.length > 0 && (
             <div>
-              <strong>다음으로 알려주세요</strong>
+              <strong>다음에 필요한 정보</strong>
               <ul>
                 {response.missingData.map((item) => (
                   <li key={item}>{item}</li>
@@ -998,7 +998,7 @@ function ProfileCard({
         </strong>
         <p>
           {profile.monthlySalary === null
-            ? '월 실수령액이 들어오면 한국형 기본 비율로 계획을 먼저 만들어요.'
+            ? '월 실수령액을 입력하면 기본 배분안을 먼저 만들어드려요.'
             : '생활비, 목표, 투자 조건은 채팅으로 언제든 조정할 수 있어요.'}
         </p>
       </div>
@@ -1166,8 +1166,8 @@ function MonthlyHistoryCard({
                 <div className="history-review-heading">
                   <CircleAlert size={15} />
                   <div>
-                    <strong>확인이 필요한 기록이에요</strong>
-                    <p>맞으면 바로 완료하고, 다르면 금액을 고치거나 AI에게 이어서 물어볼 수 있어요.</p>
+                    <strong>읽은 금액을 확인해 주세요</strong>
+                    <p>맞으면 완료하고, 다르면 금액을 바로 고치거나 이어서 물어볼 수 있어요.</p>
                   </div>
                 </div>
                 <div className="history-review-fields">
@@ -1206,7 +1206,7 @@ function MonthlyHistoryCard({
                     onClick={() => onRequestClarification(selectedSummary)}
                   >
                     <MessageCircleMore size={14} />
-                    정정해서 보내기
+                    고쳐서 보내기
                   </button>
                 </div>
               </div>
@@ -1661,8 +1661,8 @@ function PlanSection({
           <div>
             <strong>조금만 더 알려주세요</strong>
             <p>
-              월급과 생활비, 비상금, 투자 생각을 알려주시면 바로 계산해
-              드릴게요.
+              월급만 알려주시면 기본 배분안을 먼저 만들고, 생활비와 투자 기준은
+              대화로 조정할 수 있어요.
             </p>
           </div>
         </div>
@@ -1838,7 +1838,7 @@ function getNextAction(profile: FinancialProfile): NextAction {
       kind: 'salary',
       title: '월 실수령액을 알려주세요',
       description:
-        '월급만 입력하면 생활비, 비상금, 목표, 여유 생활비는 기본 비율로 먼저 채워드려요.',
+        '월급만 입력해도 생활비, 비상금, 목표 자금, 투자금 초안을 먼저 만들어드려요.',
       primaryLabel: '실수령액 입력하기',
     }
   }
@@ -1847,8 +1847,8 @@ function getNextAction(profile: FinancialProfile): NextAction {
     kind: 'plan',
     title: '기본 배분안을 확인해 보세요',
     description:
-      '대한민국 생활비 계획에서 자주 쓰는 기본 비율로 먼저 채웠어요. 다른 기준은 채팅으로 조율하면 됩니다.',
-    primaryLabel: '계획 보러가기',
+      '자주 쓰는 월급 배분 기준으로 먼저 채웠어요. 생활비, 목표, 투자는 대화로 언제든 조정할 수 있어요.',
+    primaryLabel: '계획 보기',
   }
 }
 
@@ -1864,14 +1864,14 @@ function formatCustomUseBucket(
 
 async function readAttachment(file: File): Promise<ConversationAttachment> {
   if (file.size > MAX_IMAGE_BYTES) {
-    throw new Error(`${file.name}은 4MB를 초과해 첨부할 수 없습니다.`)
+    throw new Error(`${file.name}은 4MB를 넘어 첨부할 수 없어요.`)
   }
   if (
     !['image/jpeg', 'image/png', 'image/webp', 'image/heic'].includes(
       file.type,
     )
   ) {
-    throw new Error(`${file.name}은 지원하지 않는 이미지 형식입니다.`)
+    throw new Error(`${file.name}은 지원하지 않는 이미지 형식이에요.`)
   }
 
   return {
@@ -1889,12 +1889,13 @@ function fileToBase64(file: File): Promise<string> {
     reader.onload = () => {
       const result = reader.result
       if (typeof result !== 'string') {
-        reject(new Error('이미지를 읽지 못했습니다.'))
+        reject(new Error('이미지를 읽지 못했어요. 다른 사진으로 다시 올려주세요.'))
         return
       }
       resolve(result.split(',')[1] ?? '')
     }
-    reader.onerror = () => reject(new Error('이미지를 읽지 못했습니다.'))
+    reader.onerror = () =>
+      reject(new Error('이미지를 읽지 못했어요. 다른 사진으로 다시 올려주세요.'))
     reader.readAsDataURL(file)
   })
 }
@@ -1920,7 +1921,7 @@ function parseMoney(value: string): number {
 }
 
 function formatNullableWon(value: number | null): string {
-  return value === null ? '확인 필요' : formatWon(value)
+  return value === null ? '모름' : formatWon(value)
 }
 
 function createMonthlySpendingClarification(
@@ -1932,7 +1933,7 @@ function createMonthlySpendingClarification(
     `선택지출 ${formatNullableWon(summary.flexibleExpense)}`,
   ].join(', ')
 
-  return `${formatMonth(summary.month)} 사용 요약을 확인했어요. 현재 제안은 ${amounts}입니다. 틀린 부분은 다음처럼 고쳐주세요: `
+  return `${formatMonth(summary.month)} 사용 요약을 확인했어요. 지금 읽은 금액은 ${amounts}입니다. 틀린 부분만 이렇게 고쳐주세요: `
 }
 
 function normalizeConversationMessages(

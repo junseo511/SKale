@@ -82,6 +82,8 @@ const financialProfileSchema = z.object({
   customUses: z.array(customSalaryUseSchema).max(20).default([]),
 })
 
+type FinancialProfile = z.infer<typeof financialProfileSchema>
+
 const monthlySpendingSummarySchema = z.object({
   id: z.string(),
   month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
@@ -495,13 +497,19 @@ app.post('/api/payday/chat', async (request, response, next) => {
       monthlySpending,
       recentMessages,
     } = parsedRequest.data
+    const hasKnownFinancialContext =
+      hasFinancialProfileContext(profile) ||
+      monthlySpending.length > 0 ||
+      recentMessages.some((recentMessage) =>
+        hasPaydayScopeTerm(recentMessage.content),
+      )
     if (
       attachments.length === 0 &&
-      isClearlyOutsidePaydayScope(message)
+      isClearlyOutsidePaydayScope(message, hasKnownFinancialContext)
     ) {
       response.json({
         reply:
-          '이 질문은 제가 정확히 도와드리기 어려워요. 월급, 소비, 저축, 부채, 목표, 투자처럼 돈의 흐름과 관련된 이야기라면 근거를 붙여 함께 정리해 드릴게요.',
+          '잘 모르겠어요. 월급, 소비, 저축, 부채, 목표, 투자처럼 돈의 흐름과 관련된 이야기라면 근거를 붙여 함께 정리해 드릴게요.',
         profilePatch: {},
         monthlySpendingProposal: undefined,
         missingData: [],
@@ -970,7 +978,10 @@ function getErrorStatus(error: unknown): number | undefined {
   return undefined
 }
 
-function isClearlyOutsidePaydayScope(message: string): boolean {
+function isClearlyOutsidePaydayScope(
+  message: string,
+  hasKnownFinancialContext: boolean,
+): boolean {
   const normalizedMessage = message.toLowerCase().replace(/\s+/g, ' ').trim()
   if (!normalizedMessage) {
     return false
@@ -1021,9 +1032,23 @@ function isClearlyOutsidePaydayScope(message: string): boolean {
     return true
   }
 
+  if (hasPaydayScopeTerm(normalizedMessage)) {
+    return false
+  }
+
+  return !hasKnownFinancialContext
+}
+
+function hasPaydayScopeTerm(message: string): boolean {
+  const normalizedMessage = message.toLowerCase()
+  if (/\d[\d,.\s]*(원|만원|억|천만)/.test(normalizedMessage)) {
+    return true
+  }
   const relevantTerms = [
     '월급',
     '급여',
+    '연봉',
+    '실수령',
     '소득',
     '수입',
     '지출',
@@ -1034,6 +1059,9 @@ function isClearlyOutsidePaydayScope(message: string): boolean {
     '관리비',
     '통신비',
     '보험',
+    '퇴직금',
+    '세금',
+    '공제',
     '카드',
     '대출',
     '부채',
@@ -1049,6 +1077,7 @@ function isClearlyOutsidePaydayScope(message: string): boolean {
     '포트폴리오',
     '목표',
     '예산',
+    '용돈',
     '돈',
     '금액',
     '만원',
@@ -1082,9 +1111,22 @@ function isClearlyOutsidePaydayScope(message: string): boolean {
     'goal',
   ]
 
-  if (relevantTerms.some((term) => normalizedMessage.includes(term))) {
-    return false
-  }
+  return relevantTerms.some((term) => normalizedMessage.includes(term))
+}
 
-  return false
+function hasFinancialProfileContext(profile: FinancialProfile): boolean {
+  return (
+    profile.monthlySalary !== null ||
+    profile.essentialExpense !== null ||
+    profile.debtPayment !== null ||
+    profile.currentEmergencyFund !== null ||
+    profile.targetEmergencyFund !== null ||
+    profile.goalName.trim().length > 0 ||
+    profile.goalMonthlyAmount !== null ||
+    profile.flexibleSpending !== null ||
+    profile.riskProfile !== null ||
+    profile.investmentHorizon !== null ||
+    profile.preferences.length > 0 ||
+    profile.customUses.length > 0
+  )
 }

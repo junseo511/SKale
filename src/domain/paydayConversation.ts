@@ -174,7 +174,7 @@ export const INITIAL_AGENT_MESSAGE: ConversationMessage = {
   id: 'initial-agent-message',
   role: 'agent',
   content:
-    '월급 계획을 같이 만들어볼게요. 아래 카드에서 지금 할 일을 바로 시작할 수 있어요.',
+    '월급 계획을 같이 만들어볼게요. 아래 카드에서 지금 필요한 것부터 시작해 보세요.',
   createdAt: new Date(0).toISOString(),
   status: 'sent',
   attachments: [],
