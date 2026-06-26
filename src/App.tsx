@@ -241,28 +241,30 @@ function App(): ReactNode {
     : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.'
   const quickMessages = [
     {
-      label: '사용내역 분포를 분석해줘.',
+      label: effectiveTargetMonth
+        ? `${Number(effectiveTargetMonth.split('-')[1])}월 카드 지출을 분류해줘.`
+        : '카드 내역 월을 자동으로 읽고 분류해줘.',
       prompt: spendingSummaryPrompt,
       icon: <CalendarDays size={16} />,
     },
     {
-      label: '월세를 먼저 빼두고 싶어.',
+      label: '월급날 월세 60만원을 먼저 빼둘래.',
       prompt: '월급날 월세 60만원을 따로 빼두고 싶어.',
       icon: <WalletCards size={16} />,
     },
     {
-      label: '비상금·카드값 우선순위를 봐줘.',
+      label: '투자 전에 비상금·카드값부터 점검해줘.',
       prompt:
         '이번 달은 투자보다 비상금과 카드값을 먼저 챙겨야 하는지 우선순위를 점검해줘.',
       icon: <PiggyBank size={16} />,
     },
     {
-      label: '취향을 지키며 균형을 맞춰줘.',
+      label: '외식·여행은 지키고 다른 지출을 줄일래.',
       prompt: '외식과 여행은 줄이고 싶지 않은데, 다른 지출에서 균형을 맞춰줘.',
       icon: <MessageCircleMore size={16} />,
     },
     {
-      label: '관심 종목을 분석해줘.',
+      label: 'SK하이닉스 주식 종목을 분석해줘.',
       prompt: 'SK하이닉스 주식 종목을 분석해줘.',
       icon: <TrendingUp size={16} />,
     },
@@ -590,6 +592,7 @@ function App(): ReactNode {
               {shouldShowNextAction && (
                 <NextActionPanel
                   action={recommendedAction}
+                  profile={profile}
                   plan={plan}
                   stockResearchRequest={stockResearchRequest}
                   targetMonth={effectiveTargetMonth}
@@ -844,8 +847,17 @@ function App(): ReactNode {
               ...currentProfile,
               monthlySalary: monthlyNetSalary,
             }))
+            setLatestRecommendedAction(null)
             setMessages((currentMessages) => [
               ...currentMessages,
+              {
+                id: crypto.randomUUID(),
+                role: 'user',
+                content: `월 실수령액 ${formatWon(monthlyNetSalary)}`,
+                createdAt: new Date().toISOString(),
+                status: 'sent',
+                attachments: [],
+              },
               {
                 id: crypto.randomUUID(),
                 role: 'agent',
@@ -886,6 +898,7 @@ function App(): ReactNode {
 
 function NextActionPanel({
   action,
+  profile,
   plan,
   stockResearchRequest,
   targetMonth,
@@ -893,6 +906,7 @@ function NextActionPanel({
   onUseDraft,
 }: {
   action: NextAction
+  profile: FinancialProfile
   plan: PaydayPlan | null
   stockResearchRequest: string
   targetMonth: string | undefined
@@ -901,6 +915,7 @@ function NextActionPanel({
 }): ReactNode {
   const secondaryActions = createSecondaryNextActions({
     targetMonth,
+    profile,
     plan,
     stockResearchRequest,
     primaryDraft: action.draft,
@@ -958,11 +973,13 @@ function NextActionPanel({
 
 function createSecondaryNextActions({
   targetMonth,
+  profile,
   plan,
   stockResearchRequest,
   primaryDraft,
 }: {
   targetMonth: string | undefined
+  profile: FinancialProfile
   plan: PaydayPlan | null
   stockResearchRequest: string
   primaryDraft: string | undefined
@@ -971,69 +988,88 @@ function createSecondaryNextActions({
     ? `${Number(targetMonth.split('-')[1])}월`
     : '사용내역'
   const hasInvestmentRoom = plan !== null && plan.availableInvestmentAmount > 0
+  const shouldStartWithSpending = hasOnlyMonthlySalary(profile)
   const needsEmergencyFund =
     plan !== null &&
     plan.input.currentEmergencyFund < plan.input.targetEmergencyFund
   const hasCustomUses = plan !== null && plan.input.customUses.length > 0
 
-  const candidates: SecondaryNextAction[] = [
+  const spendingAction: SecondaryNextAction = {
+    label: `${monthLabel} 분포`,
+    message: targetMonth
+      ? `${Number(targetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해줘.`
+      : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.',
+    icon: <CalendarDays size={15} />,
+  }
+  const fixedCostAction: SecondaryNextAction = {
+    label: '고정비 점검',
+    message:
+      '이번 월급 계획에서 줄이기 어려운 고정비와 조정 가능한 지출을 나눠서 개선안을 제안해줘.',
+    icon: <FileText size={15} />,
+  }
+  const detailAction: SecondaryNextAction = hasCustomUses
+    ? {
+        label: '사용처 보완',
+        message:
+          '저장된 세부 사용처를 기준으로 누락되었거나 금액이 과한 항목을 찾아 보완안을 제안해줘.',
+        icon: <WalletCards size={15} />,
+      }
+    : {
+        label: '세부 계획',
+        message:
+          '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워줘.',
+        icon: <WalletCards size={15} />,
+      }
+  const investmentAction: SecondaryNextAction = hasInvestmentRoom
+    ? {
+        label: '투자 후보',
+        message: stockResearchRequest,
+        icon: <TrendingUp size={15} />,
+      }
+    : {
+        label: '투자 여력',
+        message:
+          '이번 월급 계획에서 장기 투자금을 만들려면 어떤 항목을 조정해야 하는지 우선순위로 제안해줘.',
+        icon: <TrendingUp size={15} />,
+      }
+  const emergencyOrPortfolioAction: SecondaryNextAction = needsEmergencyFund
+    ? {
+        label: '비상금 점검',
+        message:
+          '현재 비상금과 목표 비상금을 기준으로 이번 달 비상금, 생활비, 투자금의 우선순위를 다시 점검해줘.',
+        icon: <PiggyBank size={15} />,
+      }
+    : {
+        label: '포트폴리오',
+        message:
+          '이번 달 투자 가능 금액으로 ETF 중심 포트폴리오 초안을 만들어줘. 현재가와 최신 데이터는 출처가 있을 때만 사용해줘.',
+        icon: <TrendingUp size={15} />,
+      }
+  const preferenceAction: SecondaryNextAction = {
+    label: '취향 반영',
+    message:
+      '외식과 여행은 지키면서 다른 지출에서 균형을 맞추는 월급 조정안을 제안해줘.',
+    icon: <MessageCircleMore size={15} />,
+  }
+
+  const candidates: SecondaryNextAction[] = shouldStartWithSpending ? [
+    spendingAction,
+    fixedCostAction,
+    detailAction,
+    emergencyOrPortfolioAction,
+    preferenceAction,
+    investmentAction,
+  ] : [
     hasInvestmentRoom
-      ? {
-          label: '투자 후보',
-          message: stockResearchRequest,
-          icon: <TrendingUp size={15} />,
-        }
-      : {
-          label: '투자 여력',
-          message:
-            '이번 월급 계획에서 장기 투자금을 만들려면 어떤 항목을 조정해야 하는지 우선순위로 제안해줘.',
-          icon: <TrendingUp size={15} />,
-        },
-    needsEmergencyFund
-      ? {
-          label: '비상금 점검',
-          message:
-            '현재 비상금과 목표 비상금을 기준으로 이번 달 비상금, 생활비, 투자금의 우선순위를 다시 점검해줘.',
-          icon: <PiggyBank size={15} />,
-        }
-      : {
-          label: '포트폴리오',
-          message:
-            '이번 달 투자 가능 금액으로 ETF 중심 포트폴리오 초안을 만들어줘. 현재가와 최신 데이터는 출처가 있을 때만 사용해줘.',
-          icon: <TrendingUp size={15} />,
-        },
-    {
-      label: `${monthLabel} 분포`,
-      message: targetMonth
-        ? `${Number(targetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해줘.`
-        : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.',
-      icon: <CalendarDays size={15} />,
-    },
-    hasCustomUses
-      ? {
-          label: '사용처 보완',
-          message:
-            '저장된 세부 사용처를 기준으로 누락되었거나 금액이 과한 항목을 찾아 보완안을 제안해줘.',
-          icon: <WalletCards size={15} />,
-        }
-      : {
-          label: '세부 계획',
-          message:
-            '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워줘.',
-          icon: <WalletCards size={15} />,
-        },
-    {
-      label: '고정비 점검',
-      message:
-        '이번 월급 계획에서 줄이기 어려운 고정비와 조정 가능한 지출을 나눠서 개선안을 제안해줘.',
-      icon: <FileText size={15} />,
-    },
-    {
-      label: '취향 반영',
-      message:
-        '외식과 여행은 지키면서 다른 지출에서 균형을 맞추는 월급 조정안을 제안해줘.',
-      icon: <MessageCircleMore size={15} />,
-    },
+      ? investmentAction
+      : emergencyOrPortfolioAction,
+    hasInvestmentRoom
+      ? emergencyOrPortfolioAction
+      : investmentAction,
+    spendingAction,
+    detailAction,
+    fixedCostAction,
+    preferenceAction,
   ]
 
   return uniqueNextActions(candidates, primaryDraft).slice(0, 3)
@@ -2587,6 +2623,18 @@ function getNextAction(
   }
 
   if (plan) {
+    if (hasOnlyMonthlySalary(profile)) {
+      return {
+        kind: 'message',
+        title: '사용내역을 붙여볼까요',
+        description:
+          '월급 기준은 잡혔으니 카드 내역이나 고정비를 더해 실제 생활비 기준으로 계획을 맞춰볼 수 있어요.',
+        primaryLabel: '사용내역 분석',
+        draft:
+          '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.',
+      }
+    }
+
     if (plan.availableInvestmentAmount > 0) {
       return {
         kind: 'message',
@@ -2629,6 +2677,23 @@ function getNextAction(
       '월급에서 먼저 나갈 돈을 빼고, 남는 금액만 투자금으로 계산했어요.',
     primaryLabel: '계획 보기',
   }
+}
+
+function hasOnlyMonthlySalary(profile: FinancialProfile): boolean {
+  return (
+    profile.monthlySalary !== null &&
+    profile.essentialExpense === null &&
+    profile.debtPayment === null &&
+    profile.currentEmergencyFund === null &&
+    profile.targetEmergencyFund === null &&
+    profile.goalName === null &&
+    profile.goalMonthlyAmount === null &&
+    profile.flexibleSpending === null &&
+    profile.riskProfile === null &&
+    profile.investmentHorizon === null &&
+    profile.preferences.length === 0 &&
+    profile.customUses.length === 0
+  )
 }
 
 function toNextAction(recommendation: NextActionRecommendation): NextAction {
