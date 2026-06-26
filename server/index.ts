@@ -95,6 +95,17 @@ const monthlySpendingSummarySchema = z.object({
   totalExpense: z.number().nonnegative().nullable(),
   essentialExpense: z.number().nonnegative().nullable(),
   flexibleExpense: z.number().nonnegative().nullable(),
+  categoryBreakdown: z
+    .array(
+      z
+        .object({
+          category: z.string().trim().min(1).max(40),
+          amount: z.number().nonnegative(),
+        })
+        .strict(),
+    )
+    .max(12)
+    .default([]),
   notableCategories: z.array(z.string().trim().min(1)).max(8),
   insight: z.string(),
   needReview: z.boolean(),
@@ -135,6 +146,16 @@ const paydayConversationModelResponseValidationSchema = z
         totalExpense: z.number().nonnegative().nullable(),
         essentialExpense: z.number().nonnegative().nullable(),
         flexibleExpense: z.number().nonnegative().nullable(),
+        categoryBreakdown: z
+          .array(
+            z
+              .object({
+                category: z.string().trim().min(1).max(40),
+                amount: z.number().nonnegative(),
+              })
+              .strict(),
+          )
+          .max(12),
         notableCategories: z.array(z.string().trim().min(1)).max(8),
         insight: z.string(),
         needReview: z.boolean(),
@@ -410,6 +431,19 @@ const paydayConversationResponseSchema = {
         totalExpense: { type: ['number', 'null'], minimum: 0 },
         essentialExpense: { type: ['number', 'null'], minimum: 0 },
         flexibleExpense: { type: ['number', 'null'], minimum: 0 },
+        categoryBreakdown: {
+          type: 'array',
+          maxItems: 12,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              category: { type: 'string' },
+              amount: { type: 'number', minimum: 0 },
+            },
+            required: ['category', 'amount'],
+          },
+        },
         notableCategories: {
           type: 'array',
           items: { type: 'string' },
@@ -424,6 +458,7 @@ const paydayConversationResponseSchema = {
         'totalExpense',
         'essentialExpense',
         'flexibleExpense',
+        'categoryBreakdown',
         'notableCategories',
         'insight',
         'needReview',
@@ -570,15 +605,19 @@ app.post('/api/payday/chat', async (request, response, next) => {
           'Only place facts that the user stated clearly or that are directly visible in the submitted data into profilePatch. Never infer or invent a value.',
           'Return null for every profilePatch field that should not change.',
           'Only monthlySalary is required before the application can create a first salary plan. Essential expense, debt, emergency fund, goals, flexible spending, risk profile, and investment horizon can stay null unless the user explicitly provides or changes them; the application will fill a clearly labeled default draft for those fields.',
+          'Be proactive: when enough information exists to produce a useful draft, produce the draft first and ask at most one follow-up only if it would materially change the next action.',
+          'Do not run a long interrogation flow. Prefer using saved profile values, confirmed spending summaries, and reasonable clearly-labeled defaults over asking again.',
           'Record only budget-relevant lifestyle preferences as short Korean sentences in preferences.',
           'When the user names recurring payday destinations with explicit monthly amounts, structure them in customUses.',
           'Classify unavoidable recurring obligations as essential, named future savings as goal, and protected lifestyle spending as flexible.',
           'customUses are subdivisions of the three budget buckets, not additional spending outside the salary plan.',
           'When adding, changing, or removing a custom use, return the complete desired customUses list and preserve existing items unless the user clearly asks to change or remove them.',
           'Only change an aggregate bucket amount when the user explicitly changes that whole bucket; otherwise the application will synchronize a bucket from the custom uses listed for that bucket without clearing unrelated buckets.',
+          'When the user asks to plan details inside a salary allocation and gives a category amount, propose practical customUses for that category instead of asking for every sub-item. Keep the total for that category equal to the amount the user gave.',
           'Never invent a custom-use amount. If the amount is missing or ambiguous, ask one concise clarification question and return null for customUses.',
-          'When the user submits prior-month spending data as text or images, create a monthly summary proposal using targetMonth.',
-          'If targetMonth is missing or any number in an image is unclear, set needReview to true and ask a concise clarification question in Korean.',
+          'When the user submits prior-month spending data as text or images, create a monthly summary proposal using targetMonth. If targetMonth is missing, infer the month from the submitted image/text when visible.',
+          'For spending summaries, prioritize a categoryBreakdown that groups verifiable expenses by user-understandable categories such as 식비/카페, 교통, 쇼핑, 여행, 의료/건강, 고정비, 기타. Use exact category amounts only from visible or provided transactions.',
+          'If the month or any number in an image is unclear, set needReview to true and ask a concise clarification question in Korean.',
           'Add only verifiable expense transactions. Exclude transfers, savings, investments, refunds, and income from expense totals.',
           'Treat rent, maintenance fees, telecommunications, insurance, and recurring transportation needed for daily life as essential expenses.',
           'Create monthlySpendingProposal only when the current message or attachments actually contain prior spending data. Otherwise return null.',

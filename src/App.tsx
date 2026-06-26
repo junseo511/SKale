@@ -61,6 +61,7 @@ import {
   type FinancialProfilePatch,
   type MonthlySpendingSummary,
   type PaydayConversationResponse,
+  type SpendingCategoryAmount,
 } from './domain/paydayConversation'
 import {
   estimateNetSalary,
@@ -78,6 +79,8 @@ import {
 import './App.css'
 
 type PortfolioMarket = '한국' | '미국' | '한국·미국'
+type SpendingMonthMode = 'auto' | 'manual'
+type ServerStatus = 'checking' | 'online' | 'offline'
 type NextActionKind = 'salary' | 'message' | 'plan'
 type EditableProfileField = keyof Pick<
   FinancialProfile,
@@ -152,9 +155,12 @@ function App(): ReactNode {
   })
   const [monthlySpending, setMonthlySpending] = useState<
     MonthlySpendingSummary[]
-  >(savedWorkspace?.monthlySpending ?? [])
+  >((savedWorkspace?.monthlySpending ?? []).map(normalizeMonthlySpendingSummary))
   const [draft, setDraft] = useState('')
+  const [spendingMonthMode, setSpendingMonthMode] =
+    useState<SpendingMonthMode>('auto')
   const [targetMonth, setTargetMonth] = useState(previousMonth())
+  const [serverStatus, setServerStatus] = useState<ServerStatus>('checking')
   const [attachments, setAttachments] = useState<ConversationAttachment[]>([])
   const [pendingResponse, setPendingResponse] =
     useState<PaydayConversationResponse | null>(null)
@@ -177,24 +183,52 @@ function App(): ReactNode {
 
   useEffect(() => () => abortControllerReference.current?.abort(), [])
 
+  useEffect(() => {
+    let isMounted = true
+
+    async function checkServerHealth(): Promise<void> {
+      try {
+        const status = await fetchServerHealth(import.meta.env.VITE_API_BASE_URL)
+        if (isMounted) {
+          setServerStatus(status)
+        }
+      } catch {
+        if (isMounted) {
+          setServerStatus('offline')
+        }
+      }
+    }
+
+    void checkServerHealth()
+    const intervalId = window.setInterval(() => {
+      void checkServerHealth()
+    }, 15_000)
+
+    return () => {
+      isMounted = false
+      window.clearInterval(intervalId)
+    }
+  }, [])
+
   const paydayInput = useMemo(() => toPaydayInput(profile), [profile])
   const plan = useMemo(
     () => (paydayInput ? createPaydayPlan(paydayInput) : null),
     [paydayInput],
   )
   const completedProfileFields = countCompletedProfileFields(profile)
-  const nextAction = getNextAction(profile)
+  const nextAction = getNextAction(profile, plan)
+  const hasUserMessage = messages.some((message) => message.role === 'user')
   const shouldShowQuickMessages =
-    completedProfileFields > 0 ||
-    pendingResponse !== null ||
-    messages.some((message) => message.role === 'user')
-  const shouldShowNextAction =
-    !messages.some((message) => message.role === 'user') &&
-    !pendingResponse &&
-    !isReplying
+    !hasUserMessage && pendingResponse === null && !isReplying
+  const shouldShowNextAction = pendingResponse === null && !isReplying
+  const effectiveTargetMonth =
+    spendingMonthMode === 'manual' ? targetMonth : undefined
+  const spendingSummaryPrompt = effectiveTargetMonth
+    ? `${Number(effectiveTargetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해줘.`
+    : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.'
   const quickMessages = [
     {
-      prompt: `${Number(targetMonth.split('-')[1])}월 카드 내역을 기준으로 필수지출과 선택지출을 나눠줘.`,
+      prompt: spendingSummaryPrompt,
       icon: <CalendarDays size={16} />,
     },
     {
@@ -223,17 +257,15 @@ function App(): ReactNode {
       setErrorMessage('메시지를 입력하거나 사용내역 사진을 첨부해 주세요.')
       return
     }
-    if (attachments.length > 0 && !targetMonth) {
-      setErrorMessage('사용내역 사진이 어느 달의 자료인지 선택해 주세요.')
-      return
-    }
 
     const userMessage: ConversationMessage = {
       id: crypto.randomUUID(),
       role: 'user',
       content:
         normalizedDraft ||
-        `${targetMonth} 사용내역 이미지 ${attachments.length}장을 보냈어요.`,
+        (effectiveTargetMonth
+          ? `${effectiveTargetMonth} 사용내역 이미지 ${attachments.length}장을 보냈어요.`
+          : `사용내역 이미지 ${attachments.length}장을 보냈어요. 자료 월은 이미지에서 판단해 주세요.`),
       createdAt: new Date().toISOString(),
       status: 'sent',
       attachments,
@@ -255,7 +287,7 @@ function App(): ReactNode {
       const response = await agent.reply(
         {
           message: normalizedDraft,
-          targetMonth: targetMonth || undefined,
+          targetMonth: effectiveTargetMonth,
           attachments: attachments.map(({ name, mimeType, data }) => ({
             name,
             mimeType,
@@ -281,7 +313,7 @@ function App(): ReactNode {
           attachments: [],
         },
       ])
-      setPendingResponse(response)
+      setPendingResponse(hasVisibleProposal(response) ? response : null)
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         return
@@ -500,11 +532,11 @@ function App(): ReactNode {
                   <p>한 가지씩 알려주시면 돼요</p>
                 </div>
               </div>
-              <span className="completion-badge">
-                {completedProfileFields === PROFILE_FIELD_COUNT
-                  ? '계획 준비됨'
-                  : '월급 입력 전'}
-              </span>
+              <span
+                className={`server-status-dot ${serverStatus}`}
+                aria-label={getServerStatusLabel(serverStatus)}
+                title={getServerStatusLabel(serverStatus)}
+              />
             </div>
 
             <div className="message-list" aria-live="polite">
@@ -514,7 +546,7 @@ function App(): ReactNode {
               {shouldShowNextAction && (
                 <NextActionPanel
                   action={nextAction}
-                  targetMonth={targetMonth}
+                  targetMonth={effectiveTargetMonth}
                   onOpenSalaryCalculator={openSalaryCalculator}
                   onUseDraft={(message) => {
                     setDraft(message)
@@ -683,13 +715,29 @@ function App(): ReactNode {
                   </label>
                   <label className="month-field">
                     사용내역 자료 월
-                    <input
-                      type="month"
-                      value={targetMonth}
-                      onChange={(event) =>
-                        setTargetMonth(event.target.value)
-                      }
-                    />
+                    <span className="month-control">
+                      <select
+                        aria-label="사용내역 자료 월 선택 방식"
+                        value={spendingMonthMode}
+                        onChange={(event) =>
+                          setSpendingMonthMode(
+                            event.target.value as SpendingMonthMode,
+                          )
+                        }
+                      >
+                        <option value="auto">자동</option>
+                        <option value="manual">직접 선택</option>
+                      </select>
+                      {spendingMonthMode === 'manual' && (
+                        <input
+                          type="month"
+                          value={targetMonth}
+                          onChange={(event) =>
+                            setTargetMonth(event.target.value)
+                          }
+                        />
+                      )}
+                    </span>
                   </label>
                 </div>
                 <button
@@ -806,19 +854,24 @@ function NextActionPanel({
   onUseDraft,
 }: {
   action: NextAction
-  targetMonth: string
+  targetMonth: string | undefined
   onOpenSalaryCalculator: () => void
   onUseDraft: (message: string) => void
 }): ReactNode {
+  const monthLabel = targetMonth
+    ? `${Number(targetMonth.split('-')[1])}월`
+    : '사용내역'
   const secondaryActions = [
     {
-      label: `${Number(targetMonth.split('-')[1])}월 사용내역`,
-      message: `${Number(targetMonth.split('-')[1])}월의 사용 내역을 정리하고 싶어.`,
+      label: `${monthLabel} 분포`,
+      message: targetMonth
+        ? `${Number(targetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해줘.`
+        : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.',
       icon: <CalendarDays size={15} />,
     },
     {
-      label: '먼저 뺄 돈',
-      message: '월급날 월세 70만원, 부모님 용돈 20만원, 운동비 10만원을 먼저 따로 빼둘래.',
+      label: '세부 계획',
+      message: '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워줘.',
       icon: <WalletCards size={15} />,
     },
     {
@@ -1017,6 +1070,12 @@ function ProposalCards({
             />
           </div>
           <p>{spendingProposal.insight}</p>
+          {spendingProposal.categoryBreakdown.length > 0 && (
+            <CategoryBreakdownList
+              breakdown={spendingProposal.categoryBreakdown}
+              totalExpense={spendingProposal.totalExpense}
+            />
+          )}
           {spendingProposal.notableCategories.length > 0 && (
             <div className="proposal-tags">
               {spendingProposal.notableCategories.map((category) => (
@@ -1415,6 +1474,12 @@ function MonthlyHistoryCard({
               <SpendingTrendChart summaries={spendingTrend} />
             )}
             <p>{selectedSummary.insight}</p>
+            {selectedSummary.categoryBreakdown.length > 0 && (
+              <CategoryBreakdownList
+                breakdown={selectedSummary.categoryBreakdown}
+                totalExpense={selectedSummary.totalExpense}
+              />
+            )}
             {selectedSummary.notableCategories.length > 0 && (
               <div className="history-categories">
                 {selectedSummary.notableCategories.map((category) => (
@@ -1865,26 +1930,37 @@ function PlanSection({
           <div className="plan-content">
             <div className="allocation-summary">
               <AllocationChart allocations={plan.allocations} />
-              {plan.allocations.map((allocation) => (
-                <article key={allocation.role}>
-                  <span>{String(allocation.priority).padStart(2, '0')}</span>
-                  <div>
-                    <strong>{allocation.label}</strong>
-                    <p>{allocation.reason}</p>
-                    {allocation.details.length > 0 && (
-                      <ul className="allocation-detail-list">
-                        {allocation.details.map((detail) => (
-                          <li key={`${detail.bucket}-${detail.name}`}>
-                            <span>{detail.name}</span>
-                            <b>{formatWon(detail.amount)}</b>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  <b>{formatWon(allocation.amount)}</b>
-                </article>
-              ))}
+              {plan.allocations.map((allocation) => {
+                const visibleDetails = getVisibleAllocationDetails(allocation)
+
+                return (
+                  <article key={allocation.role}>
+                    <span>{String(allocation.priority).padStart(2, '0')}</span>
+                    <div>
+                      <strong>{allocation.label}</strong>
+                      <p>{allocation.reason}</p>
+                      {visibleDetails.length > 0 && (
+                        <ul className="allocation-detail-list">
+                          {visibleDetails.map((detail) => (
+                            <li key={`${detail.bucket}-${detail.name}`}>
+                              <span>{detail.name}</span>
+                              <b>{formatWon(detail.amount)}</b>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <button
+                        className="allocation-plan-button"
+                        type="button"
+                        onClick={() => onUseDraft(createAllocationPlanningDraft(allocation))}
+                      >
+                        세부 계획하기
+                      </button>
+                    </div>
+                    <b>{formatWon(allocation.amount)}</b>
+                  </article>
+                )
+              })}
             </div>
             <aside className="portfolio-summary">
               <span>투자금 나누기</span>
@@ -2039,10 +2115,13 @@ function PortfolioDonutChart({
           </Pie>
           <Tooltip
             formatter={(value, _name, item) => {
-              const payload = item.payload as { amount?: number }
+              const payload = item.payload as {
+                amount?: number
+                label?: string
+              }
               return [
                 `${Number(value).toFixed(0)}% · ${formatWon(payload.amount ?? 0)}`,
-                '비중',
+                payload.label ?? '비중',
               ]
             }}
           />
@@ -2149,6 +2228,44 @@ function SummaryValue({
     <div>
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  )
+}
+
+function CategoryBreakdownList({
+  breakdown,
+  totalExpense,
+}: {
+  breakdown: SpendingCategoryAmount[]
+  totalExpense: number | null
+}): ReactNode {
+  const totalAmount =
+    totalExpense ??
+    breakdown.reduce((sum, item) => sum + item.amount, 0)
+
+  if (breakdown.length === 0 || totalAmount <= 0) {
+    return null
+  }
+
+  return (
+    <div className="category-breakdown-list">
+      <span>카테고리별 지출 분포</span>
+      {breakdown.map((item) => {
+        const percentage = Math.round((item.amount / totalAmount) * 100)
+
+        return (
+          <div key={item.category}>
+            <div>
+              <strong>{item.category}</strong>
+              <b>{formatWon(item.amount)}</b>
+            </div>
+            <i aria-hidden="true">
+              <em style={{ width: `${Math.min(percentage, 100)}%` }} />
+            </i>
+            <small>{percentage}%</small>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -2338,7 +2455,10 @@ function getFinancialProfileItems(
   ]
 }
 
-function getNextAction(profile: FinancialProfile): NextAction {
+function getNextAction(
+  profile: FinancialProfile,
+  plan: PaydayPlan | null,
+): NextAction {
   if (profile.monthlySalary === null) {
     return {
       kind: 'salary',
@@ -2346,6 +2466,18 @@ function getNextAction(profile: FinancialProfile): NextAction {
       description:
         '월급만 넣어도 생활비, 비상금, 목표 자금, 투자금 기준을 바로 잡아볼 수 있어요.',
       primaryLabel: '실수령액 입력하기',
+    }
+  }
+
+  if (plan) {
+    return {
+      kind: 'message',
+      title: '세부 사용 계획을 같이 잡아볼까요',
+      description:
+        '큰 범주는 이미 나눴으니, 생활비·비상금·목표 자금 안에서 실제 사용처와 금액을 더 촘촘하게 정리할 수 있어요.',
+      primaryLabel: '세부 계획하기',
+      draft:
+        '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워줘.',
     }
   }
 
@@ -2366,6 +2498,33 @@ function formatCustomUseBucket(
     goal: '목표 자금',
     flexible: '여유 생활비',
   }[bucket]
+}
+
+function getVisibleAllocationDetails(
+  allocation: SalaryAllocation,
+): SalaryAllocation['details'] {
+  if (
+    allocation.details.length === 1 &&
+    allocation.details[0].name.trim() === allocation.label.trim() &&
+    allocation.details[0].amount === allocation.amount
+  ) {
+    return []
+  }
+
+  return allocation.details
+}
+
+function createAllocationPlanningDraft(allocation: SalaryAllocation): string {
+  return `${allocation.label} ${formatWon(allocation.amount)}을 실제로 어디에 얼마씩 쓸지 세부 계획을 같이 세워줘. 이미 정해진 항목이 있으면 유지하고, 부족한 부분은 합리적인 초안으로 먼저 나눠줘.`
+}
+
+function hasVisibleProposal(response: PaydayConversationResponse): boolean {
+  return (
+    Object.keys(response.profilePatch).length > 0 ||
+    response.monthlySpendingProposal !== undefined ||
+    response.appliedFacts.length > 0 ||
+    response.missingData.length > 0
+  )
 }
 
 async function readAttachment(file: File): Promise<ConversationAttachment> {
@@ -2404,6 +2563,28 @@ function fileToBase64(file: File): Promise<string> {
       reject(new Error('이미지를 읽지 못했어요. 다른 사진으로 다시 올려주세요.'))
     reader.readAsDataURL(file)
   })
+}
+
+async function fetchServerHealth(baseUrl: string | undefined): Promise<ServerStatus> {
+  const normalizedBaseUrl = baseUrl?.replace(/\/$/, '') ?? ''
+  const response = await fetch(`${normalizedBaseUrl}/api/health`, {
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    return 'offline'
+  }
+
+  const body = (await response.json()) as { status?: string }
+  return body.status === 'ok' ? 'online' : 'offline'
+}
+
+function getServerStatusLabel(status: ServerStatus): string {
+  return {
+    checking: '서버 상태 확인 중',
+    online: '서버 연결 정상',
+    offline: '서버 연결 끊김',
+  }[status]
 }
 
 function previousMonth(): string {
@@ -2464,6 +2645,15 @@ function normalizeFinancialProfile(profile: FinancialProfile): FinancialProfile 
       legacyRiskProfile === '성장형'
         ? '공격형'
         : legacyRiskProfile,
+  }
+}
+
+function normalizeMonthlySpendingSummary(
+  summary: MonthlySpendingSummary,
+): MonthlySpendingSummary {
+  return {
+    ...summary,
+    categoryBreakdown: summary.categoryBreakdown ?? [],
   }
 }
 

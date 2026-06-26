@@ -33,9 +33,15 @@ export interface MonthlySpendingSummary {
   totalExpense: number | null
   essentialExpense: number | null
   flexibleExpense: number | null
+  categoryBreakdown: SpendingCategoryAmount[]
   notableCategories: string[]
   insight: string
   needReview: boolean
+}
+
+export interface SpendingCategoryAmount {
+  category: string
+  amount: number
 }
 
 export interface FinancialProfile {
@@ -120,6 +126,17 @@ const monthlySpendingProposalSchema = z
     totalExpense: z.number().nonnegative().nullable(),
     essentialExpense: z.number().nonnegative().nullable(),
     flexibleExpense: z.number().nonnegative().nullable(),
+    categoryBreakdown: z
+      .array(
+        z
+          .object({
+            category: z.string().trim().min(1).max(40),
+            amount: z.number().nonnegative(),
+          })
+          .strict(),
+      )
+      .max(12)
+      .default([]),
     notableCategories: z.array(z.string().trim().min(1)).max(8),
     insight: z.string(),
     needReview: z.boolean(),
