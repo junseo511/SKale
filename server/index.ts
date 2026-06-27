@@ -775,6 +775,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
       profile,
       profilePatch,
     )
+    visibleReply = sanitizeReplyForConversationIntent(visibleReply, message)
     const proactiveDetailPlan = createProactiveDetailPlanIfNeeded(
       message,
       visibleReply,
@@ -783,7 +784,10 @@ app.post('/api/payday/chat', async (request, response, next) => {
     )
     if (proactiveDetailPlan) {
       profilePatch = proactiveDetailPlan.profilePatch
-      visibleReply = proactiveDetailPlan.reply
+      visibleReply = sanitizeReplyForConversationIntent(
+        proactiveDetailPlan.reply,
+        message,
+      )
       visibleMissingData = []
       visibleAppliedFacts = [
         ...visibleAppliedFacts,
@@ -800,6 +804,8 @@ app.post('/api/payday/chat', async (request, response, next) => {
       message,
       profile,
       monthlySpending,
+      hasFreshMonthlySpendingProposal:
+        visibleMonthlySpendingProposal !== undefined,
       appContext,
     })
     if (
@@ -1717,12 +1723,14 @@ function sanitizeNextActionRecommendation({
   message,
   profile,
   monthlySpending,
+  hasFreshMonthlySpendingProposal,
   appContext,
 }: {
   recommendation: NextActionRecommendation
   message: string
   profile: FinancialProfile
   monthlySpending: MonthlySpendingSummary[]
+  hasFreshMonthlySpendingProposal: boolean
   appContext: PaydayConversationAppContext | undefined
 }): NextActionRecommendation {
   const currentIntent = getConversationIntent(message)
@@ -1737,14 +1745,16 @@ function sanitizeNextActionRecommendation({
   const completedIntents = new Set<ConversationIntent>(
     (appContext?.completedActions ?? []) as ConversationIntent[],
   )
-  if (monthlySpending.length > 0) {
+  const hasSpendingContext =
+    monthlySpending.length > 0 || hasFreshMonthlySpendingProposal
+  if (hasSpendingContext) {
     completedIntents.add('spending_distribution')
   }
 
   const contextualRecommendation = createContextualNextActionRecommendation(
     currentIntent,
     profile,
-    monthlySpending,
+    hasSpendingContext,
   )
   const isMismatchedCurrentIntent =
     currentIntent !== null &&
@@ -1765,7 +1775,7 @@ function sanitizeNextActionRecommendation({
   if (
     recommendedIntent === 'spending_distribution' &&
     currentIntent !== 'spending_distribution' &&
-    monthlySpending.length > 0
+    hasSpendingContext
   ) {
     return contextualRecommendation ?? createDefaultNextActionRecommendation(profile)
   }
@@ -1776,7 +1786,7 @@ function sanitizeNextActionRecommendation({
 function createContextualNextActionRecommendation(
   intent: ConversationIntent | null,
   profile: FinancialProfile,
-  monthlySpending: MonthlySpendingSummary[],
+  hasSpendingContext: boolean,
 ): NextActionRecommendation | null {
   switch (intent) {
     case 'investment_research':
@@ -1798,7 +1808,7 @@ function createContextualNextActionRecommendation(
           '외식과 여행은 유지하고, 나머지 지출 중 줄일 후보만 우선순위로 정리해 주세요.',
       }
     case 'spending_distribution':
-      return monthlySpending.length > 0
+      return hasSpendingContext
         ? {
             title: '분석한 내역으로 조정할까요',
             description:
@@ -2890,6 +2900,42 @@ function sanitizeReply(
 
   const sanitizedReply = sentences.join(' ').trim()
   return sanitizedReply || '저장된 정보를 반영해 다음 단계로 이어갈게요.'
+}
+
+function sanitizeReplyForConversationIntent(reply: string, message: string): string {
+  const currentIntent = getConversationIntent(message)
+  let cleanedReply = reply.replace(/\\n/g, '\n')
+
+  if (currentIntent === 'investment_research') {
+    cleanedReply = cleanedReply
+      .replace(
+        /투자에\s*앞서[^.?!。！？]*(비상금|안전망|고정비|카드값)[^.?!。！？]*[.?!。！？]/g,
+        '',
+      )
+      .replace(
+        /(현재\s*)?비상금[^.?!。！？]*(부족|목표|확보|점검|권장)[^.?!。！？]*[.?!。！？]/g,
+        '',
+      )
+      .replace(
+        /혹시[^.?!。！？]*(비상금|안전망|고정비|고정적으로\s*지출|카드값)[^.?!。！？]*(점검|확인|보시겠어요)[^.\n]*[?？.]/g,
+        '',
+      )
+      .replace(/투자\s*전\s*(?=\|)/g, '')
+      .replace(
+        /\n?혹시[^\n]*(비상금|안전망|고정비|고정\s*지출|고정적으로\s*지출|카드값)[^\n]*/g,
+        '',
+      )
+      .replace(
+        /\n?(이제|다음으로)?[^\n]*(비상금|안전망|고정비|고정\s*지출|고정적으로\s*지출|지출\s*내역|카드값)[^\n]*(점검|확인|확인해\s*볼까요|보시겠어요)[^\n]*/g,
+        '',
+      )
+  }
+
+  return cleanedReply
+    .replace(/\s*(\|[ \t]*역할[^\n]*\|)/, '\n\n$1')
+    .replace(/([.?!。！？])\s+(\|[^\n]+\|)/g, '$1\n\n$2')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim()
 }
 
 function sanitizeMonthlySpendingProposal(

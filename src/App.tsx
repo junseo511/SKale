@@ -394,15 +394,6 @@ function App(): ReactNode {
       setLatestRecommendedAction(
         toNextAction(response.nextActionRecommendation),
       )
-      const responseForVisibleProposal =
-        Object.keys(response.profilePatch).length > 0
-          ? { ...response, profilePatch: {} }
-          : response
-      if (Object.keys(response.profilePatch).length > 0) {
-        setProfile((currentProfile) =>
-          applyFinancialProfilePatch(currentProfile, response.profilePatch),
-        )
-      }
       const nextMonthlySpending =
         response.monthlySpendingProposal &&
         hasReadableMonthlySpendingAmount(response.monthlySpendingProposal)
@@ -415,7 +406,7 @@ function App(): ReactNode {
         setMonthlySpending(nextMonthlySpending)
       }
       const visibleResponse = createVisiblePendingResponse(
-        responseForVisibleProposal,
+        response,
         profile,
         nextMonthlySpending,
       )
