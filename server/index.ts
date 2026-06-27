@@ -10,7 +10,13 @@ import express, {
 import { z } from 'zod'
 
 const DEFAULT_PORT = 8787
-const DEFAULT_MODEL = 'gemini-2.5-flash'
+const DEFAULT_MODEL_CANDIDATES = [
+  'gemini-3.5-flash',
+  'gemini-3-flash-preview',
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+] as const
 const CONFIDENCE_REVIEW_THRESHOLD = 0.75
 const MAX_IMAGE_COUNT = 4
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024
@@ -633,6 +639,15 @@ app.post('/api/payday/chat', async (request, response, next) => {
       return
     }
 
+    const deterministicFixedExpenses = createDeterministicFixedExpenseResponse(
+      message,
+      profile,
+    )
+    if (deterministicFixedExpenses) {
+      response.json(deterministicFixedExpenses)
+      return
+    }
+
     const deterministicDetailPlan = createDeterministicDetailPlanResponse(
       message,
       profile,
@@ -642,9 +657,8 @@ app.post('/api/payday/chat', async (request, response, next) => {
       return
     }
 
-    const { client, model } = createModelClient()
-    const modelResponse = await retryModelRequest(() =>
-      client.models.generateContent({
+    const result = await runModelRequest(async (client, model) => {
+      const modelResponse = await retryModelRequest(() => client.models.generateContent({
         model,
         contents: [
           {
@@ -680,13 +694,12 @@ app.post('/api/payday/chat', async (request, response, next) => {
         temperature: 0.2,
         maxOutputTokens: 4_000,
         },
-      }),
-    )
-    const modelJson = parseModelJson<unknown>(
-      readGenerateContentText(modelResponse),
-    )
-    const result =
-      paydayConversationModelResponseValidationSchema.parse(modelJson)
+      }))
+      const modelJson = parseModelJson<unknown>(
+        readGenerateContentText(modelResponse),
+      )
+      return paydayConversationModelResponseValidationSchema.parse(modelJson)
+    })
     let profilePatch: PaydayProfilePatch = Object.fromEntries(
       Object.entries(result.profilePatch).filter(
         ([key, value]) =>
@@ -751,7 +764,6 @@ app.post('/api/spending/analyze', async (request, response, next) => {
     }
 
     validateImageSizes(parsedRequest.data.images)
-    const { client, model } = createModelClient()
     const { input, images, userFeedback } = parsedRequest.data
     const contents = [
       {
@@ -772,31 +784,33 @@ app.post('/api/spending/analyze', async (request, response, next) => {
         ],
       },
     ]
-    const modelResponse = await retryModelRequest(() => client.models.generateContent({
-      model,
-      contents,
-      config: {
-        systemInstruction: [
-          'You are the spending-analysis component of the personal finance agent SKale.',
-          'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
-          'Extract only transactions directly supported by the submitted text and images. Never invent a number or date.',
-          'Treat transactions with the same date, amount, and identical or similar merchant as duplicates even when they come from different input sources. Return each transaction once.',
-          'If image OCR is uncertain, lower confidence and explain what the user should verify in Korean in reason.',
-          'Do not classify investments, savings, transfers, refunds, or income as ordinary expenses.',
-          `The current date is ${new Date().toISOString().slice(0, 10)}. Interpret a date without a year as belonging to the current year.`,
-          'Write at least one Korean sentence explaining each classification in reason.',
-          'The result is a proposal that requires user review.',
-          'If the submitted content is unrelated, nonsensical, or contains no recognizable transaction, return an empty proposals array and explain in Korean that the spending data could not be understood.',
-        ].join('\n'),
-        responseMimeType: 'application/json',
-        responseJsonSchema: spendingAnalysisSchema,
-        temperature: 0.1,
-        maxOutputTokens: 4_000,
-      },
-    }))
-    const analysis = parseModelJson<SpendingOutput>(
-      readGenerateContentText(modelResponse),
-    )
+    const analysis = await runModelRequest(async (client, model) => {
+      const modelResponse = await retryModelRequest(() => client.models.generateContent({
+        model,
+        contents,
+        config: {
+          systemInstruction: [
+            'You are the spending-analysis component of the personal finance agent SKale.',
+            'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
+            'Extract only transactions directly supported by the submitted text and images. Never invent a number or date.',
+            'Treat transactions with the same date, amount, and identical or similar merchant as duplicates even when they come from different input sources. Return each transaction once.',
+            'If image OCR is uncertain, lower confidence and explain what the user should verify in Korean in reason.',
+            'Do not classify investments, savings, transfers, refunds, or income as ordinary expenses.',
+            `The current date is ${new Date().toISOString().slice(0, 10)}. Interpret a date without a year as belonging to the current year.`,
+            'Write at least one Korean sentence explaining each classification in reason.',
+            'The result is a proposal that requires user review.',
+            'If the submitted content is unrelated, nonsensical, or contains no recognizable transaction, return an empty proposals array and explain in Korean that the spending data could not be understood.',
+          ].join('\n'),
+          responseMimeType: 'application/json',
+          responseJsonSchema: spendingAnalysisSchema,
+          temperature: 0.1,
+          maxOutputTokens: 4_000,
+        },
+      }))
+      return parseModelJson<SpendingOutput>(
+        readGenerateContentText(modelResponse),
+      )
+    })
     const normalizedProposals = analysis.proposals.map((proposal) => ({
       ...proposal,
       date: normalizeTransactionDate(proposal.rawText, proposal.date),
@@ -833,43 +847,43 @@ app.post('/api/assets/analyze', async (request, response, next) => {
       return
     }
 
-    const { client, model } = createModelClient()
     const { input, userFeedback } = parsedRequest.data
-    const modelResponse = await retryModelRequest(() => client.models.generateContent({
-      model,
-      contents: [
-        `Financial and asset information:\n${input}`,
-        userFeedback
-          ? `\nUser correction request:\n${userFeedback}`
-          : '',
-      ].join(''),
-      config: {
-        systemInstruction: [
-          'You are the asset-analysis component of the personal finance agent SKale.',
-          'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
-          'Use only items and amounts explicitly provided by the user. Never invent a number.',
-          'The user may mix salary, payday, assets, debt, essential expenses, and goal funds in one natural-language message.',
-          'Recurring inflows such as salary and bonuses are recurring income and must not be included in owned assets.',
-          'Recurring outflows such as rent, telecommunications, and insurance are essential expenses and must not be included in assets or debt.',
-          'Only money already deposited and currently remaining in an account is a liquid asset.',
-          'Classify each monetary item into one of the Korean enum values defined by the response schema.',
-          'Store payday in payday and do not create a monetary proposal for it.',
-          'When recurring income exists, allocate the entire recurring-income total across the Korean salary allocation categories defined by the schema.',
-          'The allocation total must equal the recurring-income total exactly.',
-          'Prioritize debt, outstanding card payments, and essential expenses. Prioritize an emergency fund over investment when the emergency fund is insufficient.',
-          'When recurring income is absent, return an empty salaryAllocations array and mention the missing salary information in Korean in missingData.',
-          'When income, monthly living costs, or fixed costs are insufficient, do not assert an investable amount; list the missing information in Korean.',
-          'Do not calculate or assert total assets, total debt, or net worth in the model response. Application code performs those calculations.',
-          'Lower confidence for uncertain items. The user must review the proposal.',
-          'If the message is unrelated, nonsensical, or cannot be interpreted as financial information, return no proposals, explain in Korean that it could not be understood, and do not invent missing values.',
-        ].join('\n'),
-        responseMimeType: 'application/json',
-        responseJsonSchema: assetAnalysisSchema,
-        temperature: 0.1,
-        maxOutputTokens: 8_000,
-      },
-    }))
-    const analysis = parseModelJson<{
+    const analysis = await runModelRequest(async (client, model) => {
+      const modelResponse = await retryModelRequest(() => client.models.generateContent({
+        model,
+        contents: [
+          `Financial and asset information:\n${input}`,
+          userFeedback
+            ? `\nUser correction request:\n${userFeedback}`
+            : '',
+        ].join(''),
+        config: {
+          systemInstruction: [
+            'You are the asset-analysis component of the personal finance agent SKale.',
+            'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
+            'Use only items and amounts explicitly provided by the user. Never invent a number.',
+            'The user may mix salary, payday, assets, debt, essential expenses, and goal funds in one natural-language message.',
+            'Recurring inflows such as salary and bonuses are recurring income and must not be included in owned assets.',
+            'Recurring outflows such as rent, telecommunications, and insurance are essential expenses and must not be included in assets or debt.',
+            'Only money already deposited and currently remaining in an account is a liquid asset.',
+            'Classify each monetary item into one of the Korean enum values defined by the response schema.',
+            'Store payday in payday and do not create a monetary proposal for it.',
+            'When recurring income exists, allocate the entire recurring-income total across the Korean salary allocation categories defined by the schema.',
+            'The allocation total must equal the recurring-income total exactly.',
+            'Prioritize debt, outstanding card payments, and essential expenses. Prioritize an emergency fund over investment when the emergency fund is insufficient.',
+            'When recurring income is absent, return an empty salaryAllocations array and mention the missing salary information in Korean in missingData.',
+            'When income, monthly living costs, or fixed costs are insufficient, do not assert an investable amount; list the missing information in Korean.',
+            'Do not calculate or assert total assets, total debt, or net worth in the model response. Application code performs those calculations.',
+            'Lower confidence for uncertain items. The user must review the proposal.',
+            'If the message is unrelated, nonsensical, or cannot be interpreted as financial information, return no proposals, explain in Korean that it could not be understood, and do not invent missing values.',
+          ].join('\n'),
+          responseMimeType: 'application/json',
+          responseJsonSchema: assetAnalysisSchema,
+          temperature: 0.1,
+          maxOutputTokens: 8_000,
+        },
+      }))
+      return parseModelJson<{
       proposals: Array<{ confidence: number; [key: string]: unknown }>
       healthStatus: string
       insight: string
@@ -882,7 +896,8 @@ app.post('/api/assets/analyze', async (request, response, next) => {
         reason: string
       }>
       allocationInsight: string
-    }>(readGenerateContentText(modelResponse))
+      }>(readGenerateContentText(modelResponse))
+    })
 
     response.json({
       ...analysis,
@@ -914,30 +929,31 @@ app.post('/api/portfolio/analyze', async (request, response, next) => {
       return
     }
 
-    const { client, model } = createModelClient()
-    const modelResponse = await retryModelRequest(() => client.models.generateContent({
-      model,
-      contents: JSON.stringify(parsedRequest.data),
-      config: {
-        systemInstruction: [
-          'You are the portfolio-analysis component of the personal finance agent SKale.',
-          'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
-          'Consider emergency funds, debt, outstanding card payments, and short-term goal funds before investment.',
-          'Do not give buy or sell instructions. Propose only asset-class allocation directions.',
-          'Never invent a number or current market fact that the user did not provide.',
-          'Make the allocation percentages total exactly 100.',
-          'The result is a reference proposal that the user may edit, accept, or reject.',
-          'If the input is unrelated, nonsensical, or insufficient to discuss a portfolio, state in Korean that it cannot be determined and list the necessary missing information instead of guessing.',
-        ].join('\n'),
-        responseMimeType: 'application/json',
-        responseJsonSchema: portfolioAnalysisSchema,
-        temperature: 0.15,
-        maxOutputTokens: 4_000,
-      },
-    }))
-    const analysis = parseModelJson<Record<string, unknown>>(
-      readGenerateContentText(modelResponse),
-    )
+    const analysis = await runModelRequest(async (client, model) => {
+      const modelResponse = await retryModelRequest(() => client.models.generateContent({
+        model,
+        contents: JSON.stringify(parsedRequest.data),
+        config: {
+          systemInstruction: [
+            'You are the portfolio-analysis component of the personal finance agent SKale.',
+            'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
+            'Consider emergency funds, debt, outstanding card payments, and short-term goal funds before investment.',
+            'Do not give buy or sell instructions. Propose only asset-class allocation directions.',
+            'Never invent a number or current market fact that the user did not provide.',
+            'Make the allocation percentages total exactly 100.',
+            'The result is a reference proposal that the user may edit, accept, or reject.',
+            'If the input is unrelated, nonsensical, or insufficient to discuss a portfolio, state in Korean that it cannot be determined and list the necessary missing information instead of guessing.',
+          ].join('\n'),
+          responseMimeType: 'application/json',
+          responseJsonSchema: portfolioAnalysisSchema,
+          temperature: 0.15,
+          maxOutputTokens: 4_000,
+        },
+      }))
+      return parseModelJson<Record<string, unknown>>(
+        readGenerateContentText(modelResponse),
+      )
+    })
     response.json({
       ...analysis,
       id: crypto.randomUUID(),
@@ -958,34 +974,35 @@ app.post('/api/stocks/analyze', async (request, response, next) => {
       return
     }
 
-    const { client, model } = createModelClient()
-    const modelResponse = await retryModelRequest(() => client.models.generateContent({
-      model,
-      contents: JSON.stringify(parsedRequest.data),
-      config: {
-        systemInstruction: [
-          'You are the stock-review component of the personal finance agent SKale.',
-          'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
-          'Use only information provided by the user. Do not search for or infer current earnings, stock prices, or valuation data.',
-          'Use these maximum scores: industry structure 25, competitive advantage 20, financial quality 25, valuation 15, management and capital allocation 10, and risk control 5.',
-          'Return null for any score without sufficient evidence, and use the Korean verdict meaning insufficient data or hold when appropriate.',
-          'Do not force scores across all areas when financial data is sparse.',
-          'Include persistently deteriorating operating cash flow, sharp inventory or receivables growth, unaffordable debt, repeated dilution, commodity subcontracting, and overheated valuation in fatalFlags when supported by the submitted data.',
-          'Do not instruct the user to buy, sell, or hold.',
-          'The score represents strategy fit and is a draft that the user may accept or reject.',
-          'Write a Korean disclaimer stating that the analysis uses only submitted data and that the user is responsible for investment decisions.',
-          'If the input is unrelated, nonsensical, or provides no usable company information, use the Korean verdict for insufficient data and state in Korean that the request could not be understood without guessing.',
-        ].join('\n'),
-        responseMimeType: 'application/json',
-        responseJsonSchema: stockAnalysisSchema,
-        temperature: 0.1,
-        maxOutputTokens: 5_000,
-      },
-    }))
-    const analysis = parseModelJson<{
+    const analysis = await runModelRequest(async (client, model) => {
+      const modelResponse = await retryModelRequest(() => client.models.generateContent({
+        model,
+        contents: JSON.stringify(parsedRequest.data),
+        config: {
+          systemInstruction: [
+            'You are the stock-review component of the personal finance agent SKale.',
+            'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
+            'Use only information provided by the user. Do not search for or infer current earnings, stock prices, or valuation data.',
+            'Use these maximum scores: industry structure 25, competitive advantage 20, financial quality 25, valuation 15, management and capital allocation 10, and risk control 5.',
+            'Return null for any score without sufficient evidence, and use the Korean verdict meaning insufficient data or hold when appropriate.',
+            'Do not force scores across all areas when financial data is sparse.',
+            'Include persistently deteriorating operating cash flow, sharp inventory or receivables growth, unaffordable debt, repeated dilution, commodity subcontracting, and overheated valuation in fatalFlags when supported by the submitted data.',
+            'Do not instruct the user to buy, sell, or hold.',
+            'The score represents strategy fit and is a draft that the user may accept or reject.',
+            'Write a Korean disclaimer stating that the analysis uses only submitted data and that the user is responsible for investment decisions.',
+            'If the input is unrelated, nonsensical, or provides no usable company information, use the Korean verdict for insufficient data and state in Korean that the request could not be understood without guessing.',
+          ].join('\n'),
+          responseMimeType: 'application/json',
+          responseJsonSchema: stockAnalysisSchema,
+          temperature: 0.1,
+          maxOutputTokens: 5_000,
+        },
+      }))
+      return parseModelJson<{
       ticker: string | null
       [key: string]: unknown
-    }>(readGenerateContentText(modelResponse))
+      }>(readGenerateContentText(modelResponse))
+    })
 
     response.json({
       ...analysis,
@@ -1053,7 +1070,7 @@ app.listen(port, () => {
   console.log(`SKale API listening on http://localhost:${port}`)
 })
 
-function createModelClient(): { client: GoogleGenAI; model: string } {
+function createModelClient(): { client: GoogleGenAI; models: string[] } {
   const apiKey = process.env.AI_API_KEY
   if (!apiKey) {
     const error = new Error('AI_API_KEY가 설정되지 않아 AI 분석을 시작할 수 없습니다.')
@@ -1062,21 +1079,95 @@ function createModelClient(): { client: GoogleGenAI; model: string } {
   }
   return {
     client: new GoogleGenAI({ apiKey }),
-    model: process.env.AI_MODEL ?? DEFAULT_MODEL,
+    models: getModelCandidates(),
   }
+}
+
+function getModelCandidates(): string[] {
+  const explicitModels = (process.env.AI_MODELS ?? '')
+      .split(',')
+      .map((model) => model.trim())
+      .filter(Boolean)
+  if (explicitModels.length > 0) {
+    return [...new Set(explicitModels)]
+  }
+
+  const configuredModels = [
+    ...DEFAULT_MODEL_CANDIDATES,
+    process.env.AI_MODEL?.trim() ?? '',
+  ].filter(Boolean)
+
+  return [...new Set(configuredModels)]
+}
+
+async function runModelRequest<T>(
+  request: (client: GoogleGenAI, model: string) => Promise<T>,
+): Promise<T> {
+  const { client, models } = createModelClient()
+  let lastError: unknown
+
+  for (const model of models) {
+    try {
+      return await request(client, model)
+    } catch (error) {
+      lastError = error
+      if (!shouldTryNextModel(error)) {
+        throw error
+      }
+      console.warn('Retrying AI request with next model', {
+        model,
+        status: getErrorStatus(error),
+        reason: error instanceof Error ? error.message : 'unknown',
+      })
+    }
+  }
+
+  throw createAllModelsFailedError(lastError, models)
 }
 
 async function retryModelRequest<T>(request: () => Promise<T>): Promise<T> {
   try {
     return await request()
   } catch (error) {
-    const status = getErrorStatus(error)
-    if (status === 401 || status === 403 || status === 429) {
+    if (!shouldRetrySameModel(error)) {
       throw error
     }
-    await delay(450)
+    await delay(350)
     return request()
   }
+}
+
+function shouldRetrySameModel(error: unknown): boolean {
+  const status = getErrorStatus(error)
+  return status !== 401 && status !== 403 && status !== 404 && status !== 429
+}
+
+function shouldTryNextModel(error: unknown): boolean {
+  const status = getErrorStatus(error)
+  if (status === 401 || status === 403) {
+    return false
+  }
+  if (status === 404 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504) {
+    return true
+  }
+  if (error instanceof z.ZodError) {
+    return true
+  }
+  if (!(error instanceof Error)) {
+    return false
+  }
+  return /quota|rate.?limit|resource exhausted|empty|비어|json|읽지 못|parse|model/i.test(error.message)
+}
+
+function createAllModelsFailedError(error: unknown, models: string[]): Error {
+  const finalError = new Error(
+    `AI 모델 후보가 모두 응답하지 못했어요. 잠시 후 다시 시도해 주세요. (시도: ${models.join(', ')})`,
+  )
+  Object.assign(finalError, {
+    status: getErrorStatus(error) ?? 502,
+    cause: error,
+  })
+  return finalError
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -1171,6 +1262,10 @@ function createFallbackPaydayResponse(message: string): {
     message.includes('사용내역') ||
     message.includes('소비') ||
     message.includes('지출')
+  const hasInvestmentRequest =
+    /투자|종목|주식|ETF|포트폴리오|후보|시장|현재가|실적|밸류에이션/.test(message)
+  const hasSafetyRequest =
+    /비상금|카드값|대출|부채|상환/.test(message)
 
   if (hasSpendingSummaryRequest) {
     return {
@@ -1184,23 +1279,61 @@ function createFallbackPaydayResponse(message: string): {
         title: '사용내역을 분석해볼까요',
         description: '카드 내역을 보내주시면 자료 월을 판단하고 카테고리별 지출 분포로 정리해요.',
         primaryLabel: '사용내역 분석하기',
-        draft: '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.',
+        draft: '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해 주세요.',
+      },
+    }
+  }
+
+  if (hasInvestmentRequest) {
+    return {
+      reply:
+        '실시간 가격과 최신 실적은 출처가 있어야만 쓸 수 있어요. 대신 지금 확인된 투자금과 성향을 기준으로 ETF·현금성 자산·성장 후보 역할을 나눠 조사표 형태로 이어서 정리할 수 있습니다.',
+      profilePatch: {},
+      monthlySpendingProposal: undefined,
+      missingData: [],
+      appliedFacts: [],
+      nextActionRecommendation: {
+        title: '투자 후보 조사표를 만들까요',
+        description:
+          '확인된 투자금 안에서 역할별 후보, 확인할 출처, 주요 위험을 표로 정리합니다.',
+        primaryLabel: '조사표 만들기',
+        draft:
+          '확인된 투자금과 투자 조건을 기준으로 ETF와 후보 종목을 역할별 조사표로 정리해 주세요. 현재가와 재무 데이터는 출처가 있을 때만 써 주세요.',
+      },
+    }
+  }
+
+  if (hasSafetyRequest) {
+    return {
+      reply:
+        '비상금, 카드값, 대출은 투자보다 먼저 확인해야 하는 항목이에요. 이미 알려주신 값은 유지하고, 부족한 항목만 기준으로 월급 배분 우선순위를 정리하겠습니다.',
+      profilePatch: {},
+      monthlySpendingProposal: undefined,
+      missingData: [],
+      appliedFacts: [],
+      nextActionRecommendation: {
+        title: '안전망 우선순위를 볼까요',
+        description:
+          '비상금과 카드값을 먼저 보고 남는 금액만 저축이나 투자로 넘깁니다.',
+        primaryLabel: '우선순위 보기',
+        draft:
+          '현재 저장된 비상금, 카드값, 고정비를 기준으로 이번 달 월급 배분 우선순위를 정리해 주세요.',
       },
     }
   }
 
   return {
     reply:
-      '방금 질문을 이해하지 못했어요. 월급, 소비, 목표 중 하나를 조금 더 구체적으로 적어주시면 바로 이어서 정리할게요.',
+      '방금 요청을 완성하지 못했지만, 저장된 월급 정보와 사용내역을 기준으로 다음 계획은 이어갈 수 있어요. 지금 단계에서 바로 조정할 항목을 골라 정리하겠습니다.',
     profilePatch: {},
     monthlySpendingProposal: undefined,
     missingData: [],
     appliedFacts: [],
     nextActionRecommendation: {
       title: '월급 계획을 이어갈까요',
-      description: '월급, 소비, 목표 중 지금 알고 있는 내용을 바탕으로 다음 초안을 만들 수 있어요.',
+      description: '저장된 금액과 사용내역을 기준으로 다음 조정안을 바로 만들 수 있어요.',
       primaryLabel: '계획 이어가기',
-      draft: '지금까지 저장된 정보를 기준으로 다음에 조정하면 좋은 월급 계획을 제안해줘.',
+      draft: '지금까지 저장된 정보를 기준으로 다음에 조정하면 좋은 월급 계획을 제안해 주세요.',
     },
   }
 }
@@ -1249,7 +1382,7 @@ function buildPaydayConversationInstruction({
 function createBasePaydayInstructions(): string[] {
   return [
     'You are SKale, a Korean payday-planning agent.',
-    'Always write user-facing fields in natural Korean.',
+    'Always write user-facing fields in polite Korean honorific style. Do not mix 반말 and 존댓말.',
     'Return JSON that follows the response schema.',
     'Keep reply concise. Ask at most one follow-up only when it materially changes the next action.',
     'Only put clearly stated or directly visible facts into profilePatch. Return null for unchanged profilePatch fields.',
@@ -1308,6 +1441,7 @@ function createIntentInstructions(
   if (isInvestmentRequest) {
     instructions.push(
       'For investment questions, consider emergency funds, debt/card payments, essential expenses, and short-term goals before investment.',
+      'For investment research requests, include a compact visualizable markdown-style table in reply with columns 역할, 후보, 비중 초안, 근거, 주요 위험, 추가 확인 자료. If current data is missing, write 확인 필요 instead of inventing it.',
       'Do not give buy/sell/hold instructions. Frame securities as research candidates or reference allocations, not personalized recommendations.',
       'Do not invent current prices, recent earnings, valuation multiples, news, rankings, reports, exact quotes, tax rules, or legal details. Use only source-backed data provided by the user; otherwise say live/source verification is needed.',
     )
@@ -1371,6 +1505,104 @@ function compactRecentMessages(
   }))
 }
 
+function createDeterministicFixedExpenseResponse(
+  message: string,
+  profile: FinancialProfile,
+): {
+  reply: string
+  profilePatch: PaydayProfilePatch
+  monthlySpendingProposal: undefined
+  missingData: string[]
+  appliedFacts: string[]
+  nextActionRecommendation: {
+    title: string
+    description: string
+    primaryLabel: string
+    draft: string
+  }
+} | null {
+  const fixedExpenses = extractFixedExpenses(message)
+  if (fixedExpenses.length === 0) {
+    return null
+  }
+
+  const mergedCustomUses = mergeCustomUses(profile.customUses, fixedExpenses)
+  const addedText = fixedExpenses
+    .map((expense) => `${expense.name} ${expense.amount.toLocaleString()}원`)
+    .join(', ')
+  const essentialTotal = mergedCustomUses
+    .filter((use) => use.bucket === 'essential')
+    .reduce((total, use) => total + use.amount, 0)
+
+  return {
+    reply:
+      `${addedText}을 매달 먼저 나가는 필수 생활비로 반영했어요. 이제 확인된 필수 생활비는 ${essentialTotal.toLocaleString()}원입니다.`,
+    profilePatch: { customUses: mergedCustomUses },
+    monthlySpendingProposal: undefined,
+    missingData: [],
+    appliedFacts: [`고정비 ${addedText} 반영`],
+    nextActionRecommendation: {
+      title: '비상금과 카드값을 점검할까요',
+      description:
+        '고정비를 반영했으니 비상금 현황과 갚아야 할 카드값을 먼저 확인해 안전한 배분을 만들 수 있어요.',
+      primaryLabel: '비상금·카드값 점검',
+      draft:
+        '현재 비상금과 이번 달 갚아야 할 카드값을 기준으로 월급 배분 우선순위를 점검해 주세요.',
+    },
+  }
+}
+
+function extractFixedExpenses(
+  message: string,
+): Array<{ name: string; amount: number; bucket: 'essential'; note: string }> {
+  const expenseNames = ['월세', '보험료', '보험', '통신비', '구독료', '교통비', '관리비']
+  const expenses: Array<{ name: string; amount: number; bucket: 'essential'; note: string }> = []
+
+  for (const name of expenseNames) {
+    const pattern = new RegExp(`${name}[^\\d]{0,12}([\\d,]+(?:\\.\\d+)?)\\s*(만원|만 원|원)`)
+    const match = message.match(pattern)
+    if (!match) {
+      continue
+    }
+    const amount = parseKoreanMoneyAmount(match[1], match[2])
+    if (amount > 0) {
+      expenses.push({
+        name: name === '보험' ? '보험료' : name,
+        amount,
+        bucket: 'essential',
+        note: '월급날 먼저 분리',
+      })
+    }
+  }
+
+  return deduplicateFixedExpenses(expenses)
+}
+
+function parseKoreanMoneyAmount(rawAmount: string, unit: string): number {
+  const amount = Number(rawAmount.replaceAll(',', ''))
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 0
+  }
+  return unit.includes('만') ? Math.round(amount * 10_000) : Math.round(amount)
+}
+
+function deduplicateFixedExpenses(
+  expenses: Array<{ name: string; amount: number; bucket: 'essential'; note: string }>,
+): Array<{ name: string; amount: number; bucket: 'essential'; note: string }> {
+  return [...new Map(expenses.map((expense) => [expense.name, expense])).values()]
+}
+
+function mergeCustomUses(
+  currentUses: FinancialProfile['customUses'],
+  fixedExpenses: Array<{ name: string; amount: number; bucket: 'essential'; note: string }>,
+): FinancialProfile['customUses'] {
+  const fixedExpenseNames = new Set(fixedExpenses.map((expense) => expense.name))
+  return [
+    ...currentUses.filter((use) => !fixedExpenseNames.has(use.name)),
+    ...fixedExpenses,
+  ]
+}
+
 function createDeterministicDetailPlanResponse(
   message: string,
   profile: FinancialProfile,
@@ -1416,7 +1648,7 @@ function createDeterministicDetailPlanResponse(
         title: '세부 항목을 조정할까요',
         description: '이미 등록된 사용처 중 마음에 안 드는 항목만 말하면 그 부분만 다시 배분해요.',
         primaryLabel: '세부 항목 조정하기',
-        draft: '등록된 세부 사용처 중에서 과하거나 부족한 항목을 찾아서 조정안을 제안해줘.',
+        draft: '등록된 세부 사용처 중에서 과하거나 부족한 항목을 찾아서 조정안을 제안해 주세요.',
       },
     }
   }
@@ -1432,12 +1664,12 @@ function createDeterministicDetailPlanResponse(
     missingData: [],
     appliedFacts: ['월급 계획의 배분 금액을 기준으로 세부 사용처 초안을 만들었어요.'],
     nextActionRecommendation: {
-      title: '투자 후보까지 이어볼까요',
+      title: '실제 사용내역과 맞춰볼까요',
       description:
-        '세부 사용처를 반영한 뒤 남는 투자 여력을 기준으로 ETF와 종목 후보를 비교할 수 있어요.',
-      primaryLabel: '투자 후보 보기',
+        '세부 사용처를 반영한 뒤 카드 내역과 비교하면 과하거나 부족한 항목을 바로 찾을 수 있어요.',
+      primaryLabel: '사용내역 비교',
       draft:
-        '이번 달 투자 가능 금액을 기준으로 ETF와 종목 후보를 비교해줘. 현재가와 재무 데이터는 출처가 있을 때만 사용해줘.',
+        '최근 카드 내역을 기준으로 저장된 세부 사용처와 실제 지출이 어떻게 다른지 비교해 주세요.',
     },
   }
 }
@@ -1453,7 +1685,7 @@ function createDefaultNextActionRecommendation(profile: FinancialProfile): {
       title: '월 실수령액부터 입력할까요',
       description: '월급 기준이 있어야 생활비, 목표 자금, 투자금 초안을 바로 계산할 수 있어요.',
       primaryLabel: '월급 알려주기',
-      draft: '월 실수령액을 입력해서 월급 계획을 시작할게.',
+      draft: '월 실수령액을 입력해서 월급 계획을 시작해 주세요.',
     }
   }
 
@@ -1464,7 +1696,7 @@ function createDefaultNextActionRecommendation(profile: FinancialProfile): {
         '월급 기준은 잡혔으니 카드 내역이나 고정비를 더해 실제 생활비 기준으로 계획을 맞춰볼 수 있어요.',
       primaryLabel: '사용내역 분석',
       draft:
-        '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.',
+        '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해 주세요.',
     }
   }
 
@@ -1473,7 +1705,7 @@ function createDefaultNextActionRecommendation(profile: FinancialProfile): {
       title: '세부 사용처를 잡아볼까요',
       description: '이미 계산된 큰 범주를 실제 지출 항목으로 나누면 계획을 바로 실행하기 쉬워져요.',
       primaryLabel: '세부 계획하기',
-      draft: '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워줘.',
+      draft: '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워 주세요.',
     }
   }
 
@@ -1484,7 +1716,7 @@ function createDefaultNextActionRecommendation(profile: FinancialProfile): {
         '저장된 투자 성향과 기간을 기준으로 후보를 비교하되, 최신 가격과 재무 데이터는 출처가 있을 때만 활용해요.',
       primaryLabel: '종목 조사하기',
       draft:
-        '저장된 월급 계획과 투자 성향, 투자 기간을 기준으로 ETF와 종목 후보를 비교해줘. 현재가와 재무 데이터는 출처가 있을 때만 사용해줘.',
+        '저장된 월급 계획과 투자 성향, 투자 기간을 기준으로 ETF와 종목 후보를 비교해 주세요. 현재가와 재무 데이터는 출처가 있을 때만 사용해 주세요.',
     }
   }
 
@@ -1494,7 +1726,7 @@ function createDefaultNextActionRecommendation(profile: FinancialProfile): {
       '저장된 세부 사용처가 실제 카드 사용내역과 얼마나 맞는지 비교하면 조정할 곳이 선명해져요.',
     primaryLabel: '사용내역 비교',
     draft:
-      '최근 카드 내역을 기준으로 저장된 세부 사용처와 실제 지출이 어떻게 다른지 비교해줘.',
+      '최근 카드 내역을 기준으로 저장된 세부 사용처와 실제 지출이 어떻게 다른지 비교해 주세요.',
   }
 }
 
@@ -1783,8 +2015,17 @@ function normalizeTransactionDate(rawText: string, proposedDate: string): string
 }
 
 function getErrorStatus(error: unknown): number | undefined {
-  if (typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number') {
-    return error.status
+  if (typeof error === 'object' && error !== null) {
+    const errorRecord = error as Record<string, unknown>
+    for (const key of ['status', 'code', 'statusCode'] as const) {
+      if (typeof errorRecord[key] === 'number') {
+        return errorRecord[key]
+      }
+    }
+  }
+  if (error instanceof Error) {
+    const statusMatch = error.message.match(/\b(401|403|404|429|500|502|503|504)\b/)
+    return statusMatch ? Number(statusMatch[1]) : undefined
   }
   return undefined
 }

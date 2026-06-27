@@ -300,7 +300,7 @@ export function SpendingAgentWorkspace({
           <textarea
             aria-label="AI 수정 요청"
             value={feedback}
-            placeholder="예: 쿠팡 결제는 생필품 구매라서 생활비로 분류해줘."
+            placeholder="예: 쿠팡 결제는 생필품 구매라서 생활비로 분류해 주세요."
             onChange={(event) => setFeedback(event.target.value)}
           />
           <button

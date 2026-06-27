@@ -245,7 +245,7 @@ export function AssetAgentWorkspace({
           <textarea
             aria-label="자산 AI 수정 요청"
             value={feedback}
-            placeholder="예: 비상금을 먼저 500만원까지 만들고 투자는 월급의 10%만 배분해줘."
+            placeholder="예: 비상금을 먼저 500만원까지 만들고 투자는 월급의 10%만 배분해 주세요."
             onChange={(event) => setFeedback(event.target.value)}
           />
           <button

@@ -104,9 +104,6 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .category-breakdown-list i { overflow: hidden; height: 7px; border-radius: 999px; background: #f2e8ea; grid-column: 1; }
 .category-breakdown-list em { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--sk-orange), var(--sk-red)); }
 .category-breakdown-list small { color: #968b8e; font-size: 11px; text-align: right; grid-column: 2; grid-row: 2; }
-.response-context { display: grid; padding: 13px 15px; border: 1px solid #e7dfe0; border-radius: 13px; background: white; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.response-context strong { color: #665b5d; font-size: 13px; }
-.response-context ul { display: grid; margin: 7px 0 0; padding-left: 17px; color: #7b7072; font-size: 12px; line-height: 1.5; gap: 3px; }
 
 .suggestion-section { padding: 14px 20px 0; transition: padding 220ms ease; }
 .starter-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
@@ -168,6 +165,7 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .profile-next-summary p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .profile-check-list { display: grid; gap: 6px; }
 .profile-check-list > div { display: grid; min-height: 38px; padding: 8px 0; border-bottom: 1px solid #f2ecec; align-items: center; grid-template-columns: 11px 1fr minmax(32px, auto) 30px; gap: 8px; }
+.profile-check-list > div:last-child { border-bottom: 0; }
 .profile-check-list i { width: 7px; height: 7px; border-radius: 50%; background: #d8cfd1; }
 .profile-check-list .complete i { background: #39a36f; box-shadow: 0 0 0 3px #e4f6ec; }
 .profile-check-list span { color: var(--muted); font-size: 12px; }
@@ -382,7 +380,7 @@ footer > span { text-align: right; }
   .next-action-buttons { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
   .next-action-buttons button { min-height: 35px; flex: 0 0 auto; }
   .proposal-stack { padding-left: 0; }
-  .agent-proposal ul, .spending-proposal-grid, .response-context { grid-template-columns: 1fr; }
+  .agent-proposal ul, .spending-proposal-grid { grid-template-columns: 1fr; }
   .proposal-review-assist { grid-template-columns: 1fr; }
   .proposal-review-assist button { width: 100%; }
   .starter-heading { align-items: flex-start; flex-direction: column; gap: 3px; }

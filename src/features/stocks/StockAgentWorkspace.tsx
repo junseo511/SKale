@@ -169,7 +169,7 @@ export function StockAgentWorkspace({
 
           <aside className="agent-conversation-card compact-conversation">
             <div className="conversation-heading"><MessageSquareText size={19} /><div><strong>분석 수정 요청</strong><span>추가 데이터나 반대 관점을 전달해 다시 검토할 수 있어요.</span></div></div>
-            <textarea aria-label="종목 AI 수정 요청" value={feedback} placeholder="예: 영업현금흐름이 최근 3년 모두 플러스라는 점을 반영해줘." onChange={(event) => setFeedback(event.target.value)} />
+            <textarea aria-label="종목 AI 수정 요청" value={feedback} placeholder="예: 영업현금흐름이 최근 3년 모두 플러스라는 점을 반영해 주세요." onChange={(event) => setFeedback(event.target.value)} />
             <button className="button agent-feedback-button" type="button" disabled={!feedback.trim() || isAnalyzing} onClick={() => void requestAnalysis(feedback.trim())}><Sparkles size={16} />의견 반영해 다시 분석</button>
             {analysis.appliedFeedback && <p className="applied-feedback"><Check size={14} />반영한 요청: {analysis.appliedFeedback}</p>}
           </aside>

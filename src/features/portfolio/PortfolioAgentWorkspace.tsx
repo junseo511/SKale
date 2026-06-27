@@ -199,7 +199,7 @@ export function PortfolioAgentWorkspace({
           </div>
 
           <aside className="agent-conversation-card compact-conversation">
-            <div className="conversation-heading"><MessageSquareText size={19} /><div><strong>배분 방향 수정 요청</strong><span>예: 개별 종목 비중을 줄이고 현금 비중을 높여줘.</span></div></div>
+            <div className="conversation-heading"><MessageSquareText size={19} /><div><strong>배분 방향 수정 요청</strong><span>예: 개별 종목 비중을 줄이고 현금 비중을 높여 주세요.</span></div></div>
             <textarea aria-label="포트폴리오 AI 수정 요청" value={feedback} onChange={(event) => setFeedback(event.target.value)} />
             <button className="button agent-feedback-button" type="button" disabled={!feedback.trim() || isAnalyzing} onClick={() => void requestAnalysis(feedback.trim())}><Sparkles size={16} />의견 반영해 다시 분석</button>
             {analysis.appliedFeedback && <p className="applied-feedback"><Check size={14} />반영한 요청: {analysis.appliedFeedback}</p>}

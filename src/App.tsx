@@ -184,6 +184,7 @@ function App(): ReactNode {
   const [isStarterOpen, setIsStarterOpen] = useState(true)
   const abortControllerReference = useRef<AbortController | null>(null)
   const scrollPositionBeforeModalReference = useRef(0)
+  const messageListReference = useRef<HTMLDivElement | null>(null)
   const composerTextAreaReference = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
@@ -191,6 +192,19 @@ function App(): ReactNode {
   }, [messages, profile, monthlySpending])
 
   useEffect(() => () => abortControllerReference.current?.abort(), [])
+
+  useEffect(() => {
+    const messageList = messageListReference.current
+    if (!messageList) {
+      return
+    }
+    requestAnimationFrame(() => {
+      messageList.scrollTo({
+        top: messageList.scrollHeight,
+        behavior: 'smooth',
+      })
+    })
+  }, [messages.length, pendingResponse, isReplying])
 
   useEffect(() => {
     let isMounted = true
@@ -241,45 +255,56 @@ function App(): ReactNode {
   )
   const shouldShowQuickMessages = completedProfileFields > 0
   const shouldShowNextAction = !isReplying
+  const canShowInvestmentSuggestions =
+    canPrioritizeInvestment(profile, hasSpendingHistory) &&
+    plan !== null &&
+    plan.availableInvestmentAmount > 0
   const effectiveTargetMonth =
     spendingMonthMode === 'manual' ? targetMonth : undefined
   const spendingSummaryPrompt = effectiveTargetMonth
-    ? `${Number(effectiveTargetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해줘.`
-    : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.'
+    ? `${Number(effectiveTargetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해 주세요.`
+    : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해 주세요.'
   const quickMessages = [
     {
       label: effectiveTargetMonth
-        ? `${Number(effectiveTargetMonth.split('-')[1])}월 카드 지출을 분류해줘.`
-        : '카드 내역 월을 자동으로 읽고 분류해줘.',
+        ? `${Number(effectiveTargetMonth.split('-')[1])}월 카드 지출을 분류해 주세요.`
+        : '카드 내역 월을 자동으로 읽고 분류해 주세요.',
       prompt: spendingSummaryPrompt,
       icon: <CalendarDays size={16} />,
     },
     {
-      label: '월급날 월세 60만원을 먼저 빼둘래.',
-      prompt: '월급날 월세 60만원을 따로 빼두고 싶어.',
+      label: '월급날 월세 60만원을 먼저 빼두고 싶습니다.',
+      prompt: '월급날 월세 60만원을 따로 빼두고 싶습니다.',
       icon: <WalletCards size={16} />,
     },
     {
-      label: '투자 전에 비상금·카드값부터 점검해줘.',
+      label: '투자 전에 비상금·카드값부터 점검해 주세요.',
       prompt:
-        '이번 달은 투자보다 비상금과 카드값을 먼저 챙겨야 하는지 우선순위를 점검해줘.',
+        '이번 달은 투자보다 비상금과 카드값을 먼저 챙겨야 하는지 우선순위를 점검해 주세요.',
       icon: <PiggyBank size={16} />,
     },
     {
-      label: '외식·여행은 지키고 다른 지출을 줄일래.',
-      prompt: '외식과 여행은 줄이고 싶지 않은데, 다른 지출에서 균형을 맞춰줘.',
+      label: '외식·여행은 지키고 다른 지출을 줄이고 싶습니다.',
+      prompt: '외식과 여행은 줄이고 싶지 않은데, 다른 지출에서 균형을 맞춰 주세요.',
       icon: <MessageCircleMore size={16} />,
     },
-    {
-      label: 'SK하이닉스 주식 종목을 분석해줘.',
-      prompt: 'SK하이닉스 주식 종목을 분석해줘.',
-      icon: <TrendingUp size={16} />,
-    },
+    canShowInvestmentSuggestions
+      ? {
+          label: 'SK하이닉스 주식 종목을 분석해 주세요.',
+          prompt: 'SK하이닉스 주식 종목을 분석해 주세요.',
+          icon: <TrendingUp size={16} />,
+        }
+      : {
+          label: '이번 월급의 세부 사용처를 나눠 주세요.',
+          prompt:
+            '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워 주세요.',
+          icon: <FileText size={16} />,
+        },
   ]
   const stockResearchRequest =
     plan && plan.availableInvestmentAmount > 0
-      ? `${formatWon(plan.availableInvestmentAmount)}으로 ${portfolioMarket} 시장의 최신 공개자료 기반 투자 후보를 조사하고 싶어. 현재가, 최근 실적, 밸류에이션, 주요 뉴스는 출처와 기준일이 확인되는 경우에만 쓰고, 확인되지 않으면 모른다고 말해줘. 매수 지시가 아니라 ETF와 개별 종목 후보를 역할별로 비교하고, 각 후보의 비중 초안·선정 근거·주요 위험·추가 확인 자료를 표로 정리해줘.`
-      : `${portfolioMarket} 시장의 최신 공개자료 기반 투자 후보를 조사하고 싶어. 먼저 내 상황에서 투자 가능한 금액과 투자 성향을 확인한 뒤, 현재가와 재무 데이터는 출처가 있을 때만 후보 비교에 써줘.`
+      ? `${formatWon(plan.availableInvestmentAmount)}으로 ${portfolioMarket} 시장의 최신 공개자료 기반 투자 후보를 조사해 주세요. 현재가, 최근 실적, 밸류에이션, 주요 뉴스는 출처와 기준일이 확인되는 경우에만 쓰고, 확인되지 않으면 모른다고 말해 주세요. 매수 지시가 아니라 ETF와 개별 종목 후보를 역할별로 비교하고, 각 후보의 비중 초안·선정 근거·주요 위험·추가 확인 자료를 표로 정리해 주세요.`
+      : `${portfolioMarket} 시장의 최신 공개자료 기반 투자 후보를 조사해 주세요. 먼저 내 상황에서 투자 가능한 금액과 투자 성향을 확인한 뒤, 현재가와 재무 데이터는 출처가 있을 때만 후보 비교에 써 주세요.`
 
   useEffect(() => {
     if (hasUserMessage) {
@@ -357,7 +382,21 @@ function App(): ReactNode {
       setLatestRecommendedAction(
         toNextAction(response.nextActionRecommendation),
       )
-      setPendingResponse(hasVisibleProposal(response) ? response : null)
+      const responseForVisibleProposal =
+        Object.keys(response.profilePatch).length > 0
+          ? { ...response, profilePatch: {} }
+          : response
+      if (Object.keys(response.profilePatch).length > 0) {
+        setProfile((currentProfile) =>
+          applyFinancialProfilePatch(currentProfile, response.profilePatch),
+        )
+      }
+      const visibleResponse = createVisiblePendingResponse(
+        responseForVisibleProposal,
+        profile,
+        monthlySpending,
+      )
+      setPendingResponse(visibleResponse)
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         return
@@ -407,6 +446,7 @@ function App(): ReactNode {
         ? { ...currentResponse, profilePatch: {} }
         : currentResponse,
     )
+    setLatestRecommendedAction(null)
   }
 
   function applyMonthlySpendingProposal(isReviewed = false): void {
@@ -429,6 +469,7 @@ function App(): ReactNode {
         ? { ...currentResponse, monthlySpendingProposal: undefined }
         : currentResponse,
     )
+    setLatestRecommendedAction(null)
   }
 
   function updateMonthlySpendingSummary(
@@ -574,7 +615,11 @@ function App(): ReactNode {
               />
             </div>
 
-            <div className="message-list" aria-live="polite">
+            <div
+              className="message-list"
+              aria-live="polite"
+              ref={messageListReference}
+            >
               {messages.map((message) => (
                 <MessageBubble message={message} key={message.id} />
               ))}
@@ -652,7 +697,7 @@ function App(): ReactNode {
                       <span>
                         <Calculator size={16} />
                       </span>
-                      <small>실수령액을 계산해줘.</small>
+                      <small>실수령액을 계산해 주세요.</small>
                     </button>
                     {quickMessages.map((message) => (
                       <button
@@ -666,9 +711,10 @@ function App(): ReactNode {
                         <small>{message.label}</small>
                       </button>
                     ))}
+                    {canShowInvestmentSuggestions ? (
                     <div className="portfolio-suggestion-card">
                       <p>
-                        이번 달 투자금으로 포트폴리오를 구성해줘.
+                        이번 달 투자금으로 포트폴리오를 구성해 주세요.
                       </p>
                       <div className="market-selector" aria-label="투자 시장 선택">
                         {(['한국', '미국', '한국·미국'] as PortfolioMarket[]).map(
@@ -699,6 +745,26 @@ function App(): ReactNode {
                         <ChevronRight size={16} />
                       </button>
                     </div>
+                    ) : (
+                    <div className="portfolio-suggestion-card">
+                      <p>
+                        월급을 먼저 생활비, 비상금, 목표 자금으로 나눠 주세요.
+                      </p>
+                      <button
+                        className="portfolio-request-button"
+                        type="button"
+                        disabled={!isStarterOpen}
+                        onClick={() =>
+                          setDraft(
+                            '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워 주세요.',
+                          )
+                        }
+                      >
+                        세부 계획하기
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -936,6 +1002,7 @@ function NextActionPanel({
     plan,
     stockResearchRequest,
     primaryDraft: action.draft,
+    primaryText: `${action.title} ${action.primaryLabel}`,
   })
 
   function runPrimaryAction(): void {
@@ -995,6 +1062,7 @@ function createSecondaryNextActions({
   plan,
   stockResearchRequest,
   primaryDraft,
+  primaryText,
 }: {
   targetMonth: string | undefined
   profile: FinancialProfile
@@ -1002,6 +1070,7 @@ function createSecondaryNextActions({
   plan: PaydayPlan | null
   stockResearchRequest: string
   primaryDraft: string | undefined
+  primaryText: string
 }): SecondaryNextAction[] {
   const monthLabel = targetMonth
     ? `${Number(targetMonth.split('-')[1])}월`
@@ -1017,27 +1086,27 @@ function createSecondaryNextActions({
   const spendingAction: SecondaryNextAction = {
     label: `${monthLabel} 분포`,
     message: targetMonth
-      ? `${Number(targetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해줘.`
-      : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.',
+      ? `${Number(targetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해 주세요.`
+      : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해 주세요.',
     icon: <CalendarDays size={15} />,
   }
   const fixedCostAction: SecondaryNextAction = {
     label: '고정비 점검',
     message:
-      '이번 월급 계획에서 줄이기 어려운 고정비와 조정 가능한 지출을 나눠서 개선안을 제안해줘.',
+      '이번 월급 계획에서 줄이기 어려운 고정비와 조정 가능한 지출을 나눠서 개선안을 제안해 주세요.',
     icon: <FileText size={15} />,
   }
   const detailAction: SecondaryNextAction = hasCustomUses
     ? {
         label: '사용처 보완',
         message:
-          '저장된 세부 사용처를 기준으로 누락되었거나 금액이 과한 항목을 찾아 보완안을 제안해줘.',
+          '저장된 세부 사용처를 기준으로 누락되었거나 금액이 과한 항목을 찾아 보완안을 제안해 주세요.',
         icon: <WalletCards size={15} />,
       }
     : {
         label: '세부 계획',
         message:
-          '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워줘.',
+          '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워 주세요.',
         icon: <WalletCards size={15} />,
       }
   const investmentAction: SecondaryNextAction = hasInvestmentRoom && canSuggestInvestment
@@ -1049,63 +1118,108 @@ function createSecondaryNextActions({
     : {
         label: '투자 여력',
         message:
-          '이번 월급 계획에서 장기 투자금을 만들려면 어떤 항목을 조정해야 하는지 우선순위로 제안해줘.',
+          '이번 월급 계획에서 장기 투자금을 만들려면 어떤 항목을 조정해야 하는지 우선순위로 제안해 주세요.',
         icon: <TrendingUp size={15} />,
       }
   const emergencyOrPortfolioAction: SecondaryNextAction = needsEmergencyFund
     ? {
         label: '비상금 점검',
         message:
-          '현재 비상금과 목표 비상금을 기준으로 이번 달 비상금, 생활비, 투자금의 우선순위를 다시 점검해줘.',
+          '현재 비상금과 목표 비상금을 기준으로 이번 달 비상금, 생활비, 투자금의 우선순위를 다시 점검해 주세요.',
         icon: <PiggyBank size={15} />,
       }
     : {
         label: '포트폴리오',
         message:
-          '이번 달 투자 가능 금액으로 ETF 중심 포트폴리오 초안을 만들어줘. 현재가와 최신 데이터는 출처가 있을 때만 사용해줘.',
+          '이번 달 투자 가능 금액으로 ETF 중심 포트폴리오 초안을 만들어 주세요. 현재가와 최신 데이터는 출처가 있을 때만 사용해 주세요.',
         icon: <TrendingUp size={15} />,
       }
   const preferenceAction: SecondaryNextAction = {
     label: '취향 반영',
     message:
-      '외식과 여행은 지키면서 다른 지출에서 균형을 맞추는 월급 조정안을 제안해줘.',
+      '외식과 여행은 지키면서 다른 지출에서 균형을 맞추는 월급 조정안을 제안해 주세요.',
     icon: <MessageCircleMore size={15} />,
   }
 
-  const candidates: SecondaryNextAction[] = shouldStartWithSpending ? [
-    spendingAction,
-    fixedCostAction,
-    detailAction,
-    emergencyOrPortfolioAction,
-    preferenceAction,
-    investmentAction,
-  ] : [
-    hasInvestmentRoom && canSuggestInvestment
-      ? investmentAction
-      : emergencyOrPortfolioAction,
-    hasInvestmentRoom && canSuggestInvestment
-      ? emergencyOrPortfolioAction
-      : investmentAction,
-    spendingAction,
-    detailAction,
-    fixedCostAction,
-    preferenceAction,
-  ]
+  if (profile.monthlySalary === null) {
+    return [
+      spendingAction,
+      {
+        label: '고정비 정리',
+        message:
+          '월세, 보험료, 통신비처럼 매달 고정적으로 나가는 비용을 정리해 주세요.',
+        icon: <FileText size={15} />,
+      },
+      {
+        label: '비상금 점검',
+        message:
+          '현재 비상금과 카드값, 대출 여부를 기준으로 월급 계획 전에 챙길 정보를 정리해 주세요.',
+        icon: <PiggyBank size={15} />,
+      },
+    ]
+  }
 
-  return uniqueNextActions(candidates, primaryDraft).slice(0, 3)
+  const candidates: SecondaryNextAction[] = shouldStartWithSpending
+    ? [
+        spendingAction,
+        fixedCostAction,
+        detailAction,
+        emergencyOrPortfolioAction,
+        preferenceAction,
+      ]
+    : canSuggestInvestment && hasInvestmentRoom
+      ? [
+          investmentAction,
+          emergencyOrPortfolioAction,
+          spendingAction,
+          detailAction,
+          fixedCostAction,
+          preferenceAction,
+        ]
+      : [
+          emergencyOrPortfolioAction,
+          spendingAction,
+          detailAction,
+          fixedCostAction,
+          preferenceAction,
+        ]
+
+  return uniqueNextActions(candidates, primaryDraft, primaryText).slice(0, 3)
 }
 
 function uniqueNextActions(
   actions: SecondaryNextAction[],
   excludedMessage: string | undefined,
+  primaryText: string,
 ): SecondaryNextAction[] {
   const seen = new Set<string>()
   return actions.filter((action) => {
-    if (action.message === excludedMessage || seen.has(action.message)) {
+    if (
+      action.message === excludedMessage ||
+      seen.has(action.message) ||
+      isSimilarNextAction(action, primaryText)
+    ) {
       return false
     }
     seen.add(action.message)
     return true
+  })
+}
+
+function isSimilarNextAction(action: SecondaryNextAction, primaryText: string): boolean {
+  const groups = [
+    ['투자', '종목', '포트폴리오'],
+    ['비상금', '카드값', '부채'],
+    ['사용내역', '지출', '분포'],
+    ['세부', '사용처'],
+  ]
+
+  return groups.some((group) => {
+    const primaryHasGroup = group.some((keyword) => primaryText.includes(keyword))
+    const actionHasGroup = group.some((keyword) =>
+      `${action.label} ${action.message}`.includes(keyword),
+    )
+    return primaryHasGroup && actionHasGroup
   })
 }
 
@@ -1163,14 +1277,11 @@ function ProposalCards({
   const profileEntries = getProfilePatchEntries(response.profilePatch)
   const customUses = response.profilePatch.customUses
   const spendingProposal = response.monthlySpendingProposal
-  const hasResponseContext =
-    response.appliedFacts.length > 0 || response.missingData.length > 0
 
   if (
     profileEntries.length === 0 &&
     customUses === undefined &&
-    !spendingProposal &&
-    !hasResponseContext
+    !spendingProposal
   ) {
     return null
   }
@@ -1278,31 +1389,6 @@ function ProposalCards({
                 <MessageCircleMore size={13} />
                 고쳐서 보내기
               </button>
-            </div>
-          )}
-        </article>
-      )}
-
-      {hasResponseContext && (
-        <article className="response-context">
-          {response.appliedFacts.length > 0 && (
-            <div>
-              <strong>확인한 내용</strong>
-              <ul>
-                {response.appliedFacts.map((fact) => (
-                  <li key={fact}>{fact}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {response.missingData.length > 0 && (
-            <div>
-              <strong>다음에 필요한 정보</strong>
-              <ul>
-                {response.missingData.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
             </div>
           )}
         </article>
@@ -2613,17 +2699,12 @@ function getFinancialProfileItems(
       field: 'riskProfile',
       label: '투자 조건',
       value:
-        estimatedInput
-          ? `${estimatedInput.riskProfile} · ${estimatedInput.investmentHorizon}`
-          : profile.riskProfile && profile.investmentHorizon
+        profile.riskProfile && profile.investmentHorizon
           ? `${profile.riskProfile} · ${profile.investmentHorizon}`
           : '미정',
       isComplete:
-        (profile.riskProfile !== null && profile.investmentHorizon !== null) ||
-        estimatedInput !== null,
-      isDefault:
-        (profile.riskProfile === null || profile.investmentHorizon === null) &&
-        estimatedInput !== null,
+        profile.riskProfile !== null && profile.investmentHorizon !== null,
+      isDefault: false,
     },
   ]
 }
@@ -2652,7 +2733,7 @@ function getNextAction(
           '월급 기준은 잡혔으니 카드 내역이나 고정비를 더해 실제 생활비 기준으로 계획을 맞춰볼 수 있어요.',
         primaryLabel: '사용내역 분석',
         draft:
-          '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해줘.',
+          '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해 주세요.',
       }
     }
 
@@ -2667,7 +2748,7 @@ function getNextAction(
           '월급에서 쓸 돈을 먼저 분리했으니, 남은 투자 가능 금액으로 후보를 비교해볼 수 있어요.',
         primaryLabel: '투자 후보 보기',
         draft:
-          '이번 달 투자 가능 금액을 기준으로 ETF와 종목 후보를 비교해줘. 현재가와 재무 데이터는 출처가 있을 때만 사용해줘.',
+          '이번 달 투자 가능 금액을 기준으로 ETF와 종목 후보를 비교해 주세요. 현재가와 재무 데이터는 출처가 있을 때만 사용해 주세요.',
       }
     }
 
@@ -2679,7 +2760,7 @@ function getNextAction(
           '저장된 세부 사용처와 카드 사용내역을 비교하면 부족하거나 과한 항목을 바로 찾을 수 있어요.',
         primaryLabel: '사용내역 비교',
         draft:
-          '최근 카드 내역을 기준으로 저장된 세부 사용처와 실제 지출이 어떻게 다른지 비교해줘.',
+          '최근 카드 내역을 기준으로 저장된 세부 사용처와 실제 지출이 어떻게 다른지 비교해 주세요.',
       }
     }
 
@@ -2690,7 +2771,7 @@ function getNextAction(
         '큰 범주는 이미 나눴으니, 생활비·비상금·목표 자금 안에서 실제 사용처와 금액을 더 촘촘하게 정리할 수 있어요.',
       primaryLabel: '세부 계획하기',
       draft:
-        '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워줘.',
+        '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워 주세요.',
     }
   }
 
@@ -2711,12 +2792,29 @@ function resolveRecommendedAction(
 ): NextAction {
   if (
     latestAction &&
-    !isPrematureInvestmentAction(latestAction, profile, hasSpendingHistory)
+    !isPrematureInvestmentAction(latestAction, profile, hasSpendingHistory) &&
+    !isRedundantRecordAction(latestAction, hasSpendingHistory)
   ) {
     return latestAction
   }
 
   return fallbackAction
+}
+
+function isRedundantRecordAction(
+  action: NextAction,
+  hasSpendingHistory: boolean,
+): boolean {
+  if (!hasSpendingHistory) {
+    return false
+  }
+  const actionText = [
+    action.title,
+    action.description,
+    action.primaryLabel,
+    action.draft ?? '',
+  ].join(' ')
+  return /기록\s*추가|사용내역\s*추가|내역\s*저장/.test(actionText)
 }
 
 function isPrematureInvestmentAction(
@@ -2890,16 +2988,21 @@ function canPrioritizeInvestment(
   profile: FinancialProfile,
   hasSpendingHistory: boolean,
 ): boolean {
-  return (
+  const hasInvestmentCondition =
+    profile.riskProfile !== null && profile.investmentHorizon !== null
+  const hasBudgetBasis =
     hasSpendingHistory ||
-    profile.customUses.length > 0 ||
     profile.essentialExpense !== null ||
     profile.debtPayment !== null ||
     profile.currentEmergencyFund !== null ||
     profile.targetEmergencyFund !== null ||
     profile.goalMonthlyAmount !== null ||
     profile.flexibleSpending !== null ||
-    (profile.riskProfile !== null && profile.investmentHorizon !== null)
+    profile.customUses.length > 0
+
+  return (
+    hasInvestmentCondition &&
+    hasBudgetBasis
   )
 }
 
@@ -2943,15 +3046,140 @@ function createPlanDetailDraft(plan: PaydayPlan): string {
     .map((allocation) => `${allocation.label} ${formatWon(allocation.amount)}`)
     .join(', ')
 
-  return `이번 월급 계획의 세부 사용처를 같이 세워줘. 현재 배분은 ${allocations}이야. 이미 정한 항목은 유지하고, 비어 있는 범주는 합리적인 초안으로 먼저 나눠줘.`
+  return `이번 월급 계획의 세부 사용처를 같이 세워 주세요. 현재 배분은 ${allocations}입니다. 이미 정한 항목은 유지하고, 비어 있는 범주는 합리적인 초안으로 먼저 나눠 주세요.`
+}
+
+function createVisiblePendingResponse(
+  response: PaydayConversationResponse,
+  profile: FinancialProfile,
+  monthlySpending: MonthlySpendingSummary[],
+): PaydayConversationResponse | null {
+  const visibleResponse: PaydayConversationResponse = {
+    ...response,
+    profilePatch: filterRedundantProfilePatch(response.profilePatch, profile),
+    monthlySpendingProposal: isRedundantMonthlySpendingProposal(
+      response.monthlySpendingProposal,
+      monthlySpending,
+    )
+      ? undefined
+      : response.monthlySpendingProposal,
+    appliedFacts: [],
+    missingData: [],
+  }
+
+  return hasVisibleProposal(visibleResponse) ? visibleResponse : null
+}
+
+function filterRedundantProfilePatch(
+  patch: FinancialProfilePatch,
+  profile: FinancialProfile,
+): FinancialProfilePatch {
+  const visiblePatch: FinancialProfilePatch = {}
+
+  for (const [key, value] of Object.entries(patch) as Array<
+    [keyof FinancialProfilePatch, FinancialProfilePatch[keyof FinancialProfilePatch]]
+  >) {
+    if (value === undefined || isRedundantProfilePatchValue(key, value, profile)) {
+      continue
+    }
+    Object.assign(visiblePatch, { [key]: value })
+  }
+
+  return visiblePatch
+}
+
+function isRedundantProfilePatchValue(
+  key: keyof FinancialProfilePatch,
+  value: FinancialProfilePatch[keyof FinancialProfilePatch],
+  profile: FinancialProfile,
+): boolean {
+  if (key === 'preferences') {
+    return (
+      Array.isArray(value) &&
+      value.every((item) => typeof item === 'string') &&
+      value.every((item) => profile.preferences.includes(item))
+    )
+  }
+  if (key === 'customUses') {
+    return Array.isArray(value) && areCustomUseArray(value) && areCustomUsesSame(value, profile.customUses)
+  }
+
+  const currentValue = profile[key as keyof FinancialProfile]
+  if (typeof value === 'string' && typeof currentValue === 'string') {
+    return value.trim() === currentValue.trim()
+  }
+  return value === currentValue
+}
+
+function areCustomUseArray(
+  value: FinancialProfilePatch[keyof FinancialProfilePatch],
+): value is FinancialProfile['customUses'] {
+  return (
+    Array.isArray(value) &&
+    value.every((item) => typeof item === 'object' && item !== null && 'name' in item && 'amount' in item && 'bucket' in item)
+  )
+}
+
+function areCustomUsesSame(
+  left: FinancialProfilePatch['customUses'],
+  right: FinancialProfile['customUses'],
+): boolean {
+  if (!left || left.length !== right.length) {
+    return false
+  }
+
+  const normalize = (uses: FinancialProfile['customUses']) =>
+    uses
+      .map((use) => `${use.bucket}|${use.name.trim()}|${use.amount}|${use.note.trim()}`)
+      .sort()
+
+  return normalize(left).join('\n') === normalize(right).join('\n')
+}
+
+function isRedundantMonthlySpendingProposal(
+  proposal: PaydayConversationResponse['monthlySpendingProposal'],
+  monthlySpending: MonthlySpendingSummary[],
+): boolean {
+  if (!proposal) {
+    return false
+  }
+  const existingSummary = monthlySpending.find(
+    (summary) => summary.month === proposal.month,
+  )
+  if (!existingSummary) {
+    return false
+  }
+
+  return (
+    existingSummary.totalExpense === proposal.totalExpense &&
+    existingSummary.essentialExpense === proposal.essentialExpense &&
+    existingSummary.flexibleExpense === proposal.flexibleExpense &&
+    areCategoryBreakdownsSame(
+      existingSummary.categoryBreakdown,
+      proposal.categoryBreakdown,
+    )
+  )
+}
+
+function areCategoryBreakdownsSame(
+  left: SpendingCategoryAmount[],
+  right: SpendingCategoryAmount[],
+): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+  const normalize = (items: SpendingCategoryAmount[]) =>
+    items
+      .map((item) => `${item.category.trim()}|${item.amount}`)
+      .sort()
+      .join('\n')
+  return normalize(left) === normalize(right)
 }
 
 function hasVisibleProposal(response: PaydayConversationResponse): boolean {
   return (
     Object.keys(response.profilePatch).length > 0 ||
-    response.monthlySpendingProposal !== undefined ||
-    response.appliedFacts.length > 0 ||
-    response.missingData.length > 0
+    response.monthlySpendingProposal !== undefined
   )
 }
 
