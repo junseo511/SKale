@@ -220,6 +220,19 @@ const paydayConversationModelResponseValidationSchema = z
         draft: z.string().trim().min(1).max(500),
       })
       .strict(),
+    secondaryActionRecommendations: z
+      .array(
+        z
+          .object({
+            title: z.string().trim().min(1).max(80),
+            description: z.string().trim().min(1).max(200),
+            primaryLabel: z.string().trim().min(1).max(40),
+            draft: z.string().trim().min(1).max(500),
+          })
+          .strict(),
+      )
+      .max(3)
+      .optional(),
   })
   .strict()
 
@@ -569,6 +582,21 @@ const paydayConversationResponseSchema = {
       },
       required: ['title', 'description', 'primaryLabel', 'draft'],
     },
+    secondaryActionRecommendations: {
+      type: 'array',
+      maxItems: 3,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: { type: 'string' },
+          description: { type: 'string' },
+          primaryLabel: { type: 'string' },
+          draft: { type: 'string' },
+        },
+        required: ['title', 'description', 'primaryLabel', 'draft'],
+      },
+    },
   },
   required: [
     'reply',
@@ -808,6 +836,16 @@ app.post('/api/payday/chat', async (request, response, next) => {
         visibleMonthlySpendingProposal !== undefined,
       appContext,
     })
+    let visibleSecondaryActionRecommendations =
+      sanitizeSecondaryActionRecommendations({
+        recommendations: result.secondaryActionRecommendations ?? [],
+        primaryRecommendation: visibleNextActionRecommendation,
+        message,
+        monthlySpending,
+        hasFreshMonthlySpendingProposal:
+          visibleMonthlySpendingProposal !== undefined,
+        appContext,
+      })
     if (
       requestedMonthlySpendingProposal !== undefined &&
       visibleMonthlySpendingProposal === undefined
@@ -818,6 +856,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
       visibleAppliedFacts = []
       visibleNextActionRecommendation =
         createSpendingDataNextActionRecommendation()
+      visibleSecondaryActionRecommendations = []
     }
 
     response.json({
@@ -827,6 +866,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
       missingData: visibleMissingData,
       appliedFacts: visibleAppliedFacts,
       nextActionRecommendation: visibleNextActionRecommendation,
+      secondaryActionRecommendations: visibleSecondaryActionRecommendations,
       monthlySpendingProposal: visibleMonthlySpendingProposal,
     })
   } catch (error) {
@@ -1783,6 +1823,68 @@ function sanitizeNextActionRecommendation({
   return recommendation
 }
 
+function sanitizeSecondaryActionRecommendations({
+  recommendations,
+  primaryRecommendation,
+  message,
+  monthlySpending,
+  hasFreshMonthlySpendingProposal,
+  appContext,
+}: {
+  recommendations: NextActionRecommendation[]
+  primaryRecommendation: NextActionRecommendation
+  message: string
+  monthlySpending: MonthlySpendingSummary[]
+  hasFreshMonthlySpendingProposal: boolean
+  appContext: PaydayConversationAppContext | undefined
+}): NextActionRecommendation[] {
+  const currentIntent = getConversationIntent(message)
+  const completedIntents = new Set<ConversationIntent>(
+    (appContext?.completedActions ?? []) as ConversationIntent[],
+  )
+  const hasSpendingContext =
+    monthlySpending.length > 0 || hasFreshMonthlySpendingProposal
+  if (hasSpendingContext) {
+    completedIntents.add('spending_distribution')
+  }
+  const primaryDraft = normalizeKoreanText(primaryRecommendation.draft)
+  const seenDrafts = new Set<string>([primaryDraft])
+
+  return recommendations.filter((recommendation) => {
+    const normalizedDraft = normalizeKoreanText(recommendation.draft)
+    if (!normalizedDraft || seenDrafts.has(normalizedDraft)) {
+      return false
+    }
+
+    const recommendedIntent = getConversationIntent(
+      [
+        recommendation.title,
+        recommendation.description,
+        recommendation.primaryLabel,
+        recommendation.draft,
+      ].join(' '),
+    )
+    if (
+      recommendedIntent === 'spending_distribution' &&
+      currentIntent !== 'spending_distribution' &&
+      hasSpendingContext
+    ) {
+      return false
+    }
+    if (
+      recommendedIntent !== null &&
+      currentIntent !== null &&
+      recommendedIntent !== currentIntent &&
+      completedIntents.has(recommendedIntent)
+    ) {
+      return false
+    }
+
+    seenDrafts.add(normalizedDraft)
+    return true
+  })
+}
+
 function createContextualNextActionRecommendation(
   intent: ConversationIntent | null,
   profile: FinancialProfile,
@@ -2003,6 +2105,7 @@ function createBasePaydayInstructions(): string[] {
     'nextActionRecommendation must be a natural continuation of the current user message. Do not recommend spending history, safety checks, preferences, or investment research unless that is the current intent or directly necessary to complete it.',
     'The app calculates salary allocations and investable cash. Do not claim the model finalized those amounts.',
     'Always return nextActionRecommendation as a concrete Korean message the user can send next.',
+    'When useful, return secondaryActionRecommendations with 1 to 3 distinct next actions that are also natural continuations. Do not repeat the primary action, completed actions, or requests for data already provided.',
     'If the message is unrelated or unintelligible, answer with a gentle 잘 모르겠어요-style scope guide and return no proposals.',
   ]
 }

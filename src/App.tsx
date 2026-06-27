@@ -184,6 +184,10 @@ function App(): ReactNode {
     useState<PaydayConversationResponse | null>(null)
   const [latestRecommendedAction, setLatestRecommendedAction] =
     useState<NextAction | null>(null)
+  const [
+    latestSecondaryRecommendedActions,
+    setLatestSecondaryRecommendedActions,
+  ] = useState<NextActionRecommendation[]>([])
   const [isReplying, setIsReplying] = useState(false)
   const [replyWaitNotice, setReplyWaitNotice] = useState(
     '내용을 정리하고 있어요. 최대 30초까지 걸릴 수 있어요.',
@@ -266,6 +270,14 @@ function App(): ReactNode {
   const recommendedAction = resolveRecommendedAction(
     latestRecommendedAction,
     nextAction,
+    profile,
+    hasSpendingHistory,
+    messages,
+    completedActionIntents,
+  )
+  const recommendedSecondaryActions = resolveSecondaryRecommendedActions(
+    latestSecondaryRecommendedActions,
+    recommendedAction,
     profile,
     hasSpendingHistory,
     messages,
@@ -394,6 +406,9 @@ function App(): ReactNode {
       setLatestRecommendedAction(
         toNextAction(response.nextActionRecommendation),
       )
+      setLatestSecondaryRecommendedActions(
+        response.secondaryActionRecommendations ?? [],
+      )
       const nextMonthlySpending =
         response.monthlySpendingProposal &&
         hasReadableMonthlySpendingAmount(response.monthlySpendingProposal)
@@ -461,6 +476,7 @@ function App(): ReactNode {
         : currentResponse,
     )
     setLatestRecommendedAction(null)
+    setLatestSecondaryRecommendedActions([])
   }
 
   function applyMonthlySpendingProposal(isReviewed = false): void {
@@ -484,6 +500,7 @@ function App(): ReactNode {
         : currentResponse,
     )
     setLatestRecommendedAction(null)
+    setLatestSecondaryRecommendedActions([])
   }
 
   function updateMonthlySpendingSummary(
@@ -522,6 +539,7 @@ function App(): ReactNode {
     setAttachments([])
     setPendingResponse(null)
     setLatestRecommendedAction(null)
+    setLatestSecondaryRecommendedActions([])
     setErrorMessage('')
   }
 
@@ -664,6 +682,7 @@ function App(): ReactNode {
               {shouldShowNextAction && (
                 <NextActionPanel
                   action={recommendedAction}
+                  aiSecondaryActions={recommendedSecondaryActions}
                   profile={profile}
                   hasSpendingHistory={hasSpendingHistory}
                   completedActionIntents={completedActionIntents}
@@ -888,6 +907,7 @@ function App(): ReactNode {
               monthlySalary: monthlyNetSalary,
             }))
             setLatestRecommendedAction(null)
+            setLatestSecondaryRecommendedActions([])
             setMessages((currentMessages) => [
               ...currentMessages,
               {
@@ -938,6 +958,7 @@ function App(): ReactNode {
 
 function NextActionPanel({
   action,
+  aiSecondaryActions,
   profile,
   hasSpendingHistory,
   completedActionIntents,
@@ -948,6 +969,7 @@ function NextActionPanel({
   onUseDraft,
 }: {
   action: NextAction
+  aiSecondaryActions: SecondaryNextAction[]
   profile: FinancialProfile
   hasSpendingHistory: boolean
   completedActionIntents: ConversationActionIntent[]
@@ -966,6 +988,7 @@ function NextActionPanel({
     stockResearchRequest,
     primaryDraft: action.draft,
     primaryText: `${action.title} ${action.primaryLabel}`,
+    aiSecondaryActions,
   })
 
   function runPrimaryAction(): void {
@@ -1027,6 +1050,7 @@ function createSecondaryNextActions({
   stockResearchRequest,
   primaryDraft,
   primaryText,
+  aiSecondaryActions,
 }: {
   targetMonth: string | undefined
   profile: FinancialProfile
@@ -1036,6 +1060,7 @@ function createSecondaryNextActions({
   stockResearchRequest: string
   primaryDraft: string | undefined
   primaryText: string
+  aiSecondaryActions: SecondaryNextAction[]
 }): SecondaryNextAction[] {
   const monthLabel = targetMonth
     ? `${Number(targetMonth.split('-')[1])}월`
@@ -1149,12 +1174,17 @@ function createSecondaryNextActions({
           preferenceAction,
         ]
 
-  return uniqueNextActions(
+  const localSecondaryActions = uniqueNextActions(
     candidates,
     primaryDraft,
     primaryText,
     completedActionIntents,
-  ).slice(0, 3)
+  )
+
+  return uniqueSecondaryActionMessages([
+    ...aiSecondaryActions,
+    ...localSecondaryActions,
+  ]).slice(0, 3)
 }
 
 function uniqueNextActions(
@@ -1171,6 +1201,19 @@ function uniqueNextActions(
       isSimilarNextAction(action, primaryText) ||
       isCompletedActionMessage(action.message, completedActionIntents)
     ) {
+      return false
+    }
+    seen.add(action.message)
+    return true
+  })
+}
+
+function uniqueSecondaryActionMessages(
+  actions: SecondaryNextAction[],
+): SecondaryNextAction[] {
+  const seen = new Set<string>()
+  return actions.filter((action) => {
+    if (seen.has(action.message)) {
       return false
     }
     seen.add(action.message)
@@ -2904,15 +2947,15 @@ function createReplyWaitNotice(
   attachmentCount: number,
 ): string {
   if (attachmentCount > 0) {
-    return `사용내역 이미지 ${attachmentCount}장을 읽고 있어요. 최대 1분 까지 걸릴 수 있어요.`
+    return `사용내역 이미지 ${attachmentCount}장을 읽고 있어요. 최대 60초까지 걸릴 수 있어요.`
   }
 
   const intent = getActionIntent(message)
   if (intent === 'investment_research') {
-    return '투자 후보를 비교해 정리하고 있어요. 최대 45초 까지 걸릴 수 있어요.'
+    return '투자 후보를 비교해 정리하고 있어요. 최대 45초까지 걸릴 수 있어요.'
   }
   if (intent === 'spending_distribution') {
-    return '사용내역을 분류하고 있어요. 최대 45초 까지 걸릴 수 있어요.'
+    return '사용내역을 분류하고 있어요. 최대 45초까지 걸릴 수 있어요.'
   }
   if (
     intent === 'detail_plan' ||
@@ -2920,10 +2963,10 @@ function createReplyWaitNotice(
     intent === 'detail_adjust' ||
     intent === 'preference_adjust'
   ) {
-    return '월급 조정안을 정리하고 있어요. 최대 30초 까지 걸릴 수 있어요.'
+    return '월급 조정안을 정리하고 있어요. 최대 30초까지 걸릴 수 있어요.'
   }
 
-  return '내용을 정리하고 있어요. 최대 20초 까지 걸릴 수 있어요.'
+  return '내용을 정리하고 있어요. 최대 20초까지 걸릴 수 있어요.'
 }
 
 function resolveRecommendedAction(
@@ -2940,27 +2983,20 @@ function resolveRecommendedAction(
     profile,
     hasSpendingHistory,
   )
-  if (
-    contextualAction &&
-    (
-      latestAction === null ||
-      !isNextActionAlignedWithIntent(latestAction, latestUserIntent) ||
-      isPrematureInvestmentAction(latestAction, profile, hasSpendingHistory) ||
-      isRedundantRecordAction(latestAction, hasSpendingHistory) ||
-      isRecentlyRepeatedAction(latestAction, messages)
-    )
-  ) {
-    return contextualAction
+
+  if (latestAction && isSafeAiRecommendedAction({
+    action: latestAction,
+    profile,
+    hasSpendingHistory,
+    messages,
+    latestUserIntent,
+    completedActionIntents,
+  })) {
+    return latestAction
   }
 
-  if (
-    latestAction &&
-    !isPrematureInvestmentAction(latestAction, profile, hasSpendingHistory) &&
-    !isRedundantRecordAction(latestAction, hasSpendingHistory) &&
-    !isRecentlyRepeatedAction(latestAction, messages) &&
-    !isCompletedNextAction(latestAction, completedActionIntents)
-  ) {
-    return latestAction
+  if (latestAction && contextualAction) {
+    return contextualAction
   }
 
   if (
@@ -2975,6 +3011,85 @@ function resolveRecommendedAction(
   }
 
   return fallbackAction
+}
+
+function isSafeAiRecommendedAction({
+  action,
+  profile,
+  hasSpendingHistory,
+  messages,
+  latestUserIntent,
+  completedActionIntents,
+}: {
+  action: NextAction
+  profile: FinancialProfile
+  hasSpendingHistory: boolean
+  messages: ConversationMessage[]
+  latestUserIntent: ConversationActionIntent | null
+  completedActionIntents: ConversationActionIntent[]
+}): boolean {
+  if (
+    isPrematureInvestmentAction(action, profile, hasSpendingHistory) ||
+    isRedundantRecordAction(action, hasSpendingHistory) ||
+    isRecentlyRepeatedAction(action, messages)
+  ) {
+    return false
+  }
+
+  const actionIntent = getNextActionIntent(action)
+  if (
+    actionIntent !== null &&
+    latestUserIntent !== null &&
+    actionIntent !== latestUserIntent &&
+    completedActionIntents.includes(actionIntent)
+  ) {
+    return false
+  }
+
+  return true
+}
+
+function resolveSecondaryRecommendedActions(
+  recommendations: NextActionRecommendation[],
+  primaryAction: NextAction,
+  profile: FinancialProfile,
+  hasSpendingHistory: boolean,
+  messages: ConversationMessage[],
+  completedActionIntents: ConversationActionIntent[],
+): SecondaryNextAction[] {
+  const latestUserIntent = getLatestUserIntent(messages)
+
+  return recommendations
+    .map((recommendation) => toMessageNextAction(recommendation))
+    .filter((action) =>
+      action.draft !== undefined &&
+      action.draft !== primaryAction.draft &&
+      isSafeAiRecommendedAction({
+        action,
+        profile,
+        hasSpendingHistory,
+        messages,
+        latestUserIntent,
+        completedActionIntents,
+      }),
+    )
+    .map((action) => ({
+      label: action.primaryLabel,
+      message: action.draft ?? '',
+      icon: getActionIcon(getNextActionIntent(action)),
+    }))
+}
+
+function toMessageNextAction(
+  recommendation: NextActionRecommendation,
+): NextAction {
+  return {
+    kind: 'message',
+    title: recommendation.title,
+    description: recommendation.description,
+    primaryLabel: recommendation.primaryLabel,
+    draft: recommendation.draft,
+  }
 }
 
 function getLatestUserIntent(
@@ -3098,23 +3213,6 @@ function createContextualNextAction(
   return null
 }
 
-function isNextActionAlignedWithIntent(
-  action: NextAction,
-  intent: ConversationActionIntent | null,
-): boolean {
-  if (intent === null) {
-    return true
-  }
-
-  const actionText = [
-    action.title,
-    action.description,
-    action.primaryLabel,
-    action.draft ?? '',
-  ].join(' ')
-  return getActionIntent(actionText) === intent
-}
-
 function createAlternativeNextAction(
   profile: FinancialProfile,
   hasSpendingHistory: boolean,
@@ -3176,13 +3274,42 @@ function isCompletedNextAction(
   action: NextAction,
   completedActionIntents: ConversationActionIntent[],
 ): boolean {
-  const actionText = [
-    action.title,
-    action.description,
-    action.primaryLabel,
-    action.draft ?? '',
-  ].join(' ')
-  return isCompletedActionMessage(actionText, completedActionIntents)
+  const intent = getNextActionIntent(action)
+  return intent !== null && completedActionIntents.includes(intent)
+}
+
+function getNextActionIntent(action: NextAction): ConversationActionIntent | null {
+  return getActionIntent(
+    [
+      action.title,
+      action.description,
+      action.primaryLabel,
+      action.draft ?? '',
+    ].join(' '),
+  )
+}
+
+function getActionIcon(intent: ConversationActionIntent | null): ReactNode {
+  switch (intent) {
+    case 'spending_distribution':
+      return <CalendarDays size={15} />
+    case 'fixed_costs':
+      return <FileText size={15} />
+    case 'safety_check':
+      return <PiggyBank size={15} />
+    case 'investment_research':
+      return <TrendingUp size={15} />
+    case 'preference_adjust':
+      return <MessageCircleMore size={15} />
+    case 'detail_plan':
+    case 'detail_compare':
+    case 'detail_adjust':
+      return <WalletCards size={15} />
+    case 'salary':
+      return <Calculator size={15} />
+    default:
+      return <MessageCircleMore size={15} />
+  }
 }
 
 function isRecentlyRepeatedAction(

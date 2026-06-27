@@ -190,6 +190,19 @@ export const paydayConversationResponseSchema = z
         draft: z.string().trim().min(1).max(500),
       })
       .strict(),
+    secondaryActionRecommendations: z
+      .array(
+        z
+          .object({
+            title: z.string().trim().min(1).max(80),
+            description: z.string().trim().min(1).max(200),
+            primaryLabel: z.string().trim().min(1).max(40),
+            draft: z.string().trim().min(1).max(500),
+          })
+          .strict(),
+      )
+      .max(3)
+      .optional(),
   })
   .strict()
 
