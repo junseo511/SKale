@@ -1817,9 +1817,16 @@ function createContextualNextActionRecommendation(
         draft:
           '방금 안전망 점검 결과를 기준으로 이번 달 먼저 지킬 금액과 조정할 금액을 구체화해 주세요.',
       }
+    case 'detail_adjust':
+      return {
+        title: '이번 월급 계획을 확인할까요',
+        description:
+          '방금 조정한 세부 사용처가 반영됐어요. 이제 전체 배분을 확인하면 됩니다.',
+        primaryLabel: '계획 보기',
+        draft: '지금까지 반영된 월급 계획 전체를 확인해 주세요.',
+      }
     case 'detail_plan':
     case 'detail_compare':
-    case 'detail_adjust':
       return {
         title: '세부 사용처를 이어서 다듬을까요',
         description:
@@ -2447,28 +2454,35 @@ function createDeterministicDetailAdjustmentResponse(
   const plannedFlexible = sumCustomUses(profile.customUses, 'flexible')
   const adjustedEssential = sumCustomUses(adjustedCustomUses, 'essential')
   const adjustedFlexible = sumCustomUses(adjustedCustomUses, 'flexible')
+  const hasChangedCustomUses = !areCustomUsesEquivalent(
+    profile.customUses,
+    adjustedCustomUses,
+  )
 
   return {
     reply: [
-      `${formatMonthForReply(latestSpending.month)} 지출을 기준으로 세부 사용처를 조정했어요.`,
+      hasChangedCustomUses
+        ? `${formatMonthForReply(latestSpending.month)} 지출을 기준으로 세부 사용처를 조정했어요.`
+        : `${formatMonthForReply(latestSpending.month)} 지출 기준으로 이미 세부 사용처가 맞춰져 있어요.`,
       [
         createAdjustmentLine('필수 생활비', plannedEssential, adjustedEssential),
         createAdjustmentLine('여유 생활비', plannedFlexible, adjustedFlexible),
       ].join('\n'),
       describeCustomUses(adjustedCustomUses),
-      '이 금액으로 반영해둘게요. 바꾸고 싶은 항목만 다시 말해주시면 됩니다.',
+      hasChangedCustomUses
+        ? '이 금액으로 반영해둘게요. 이제 전체 월급 계획을 확인하면 됩니다.'
+        : '더 조정할 금액이 없어 같은 작업을 반복하지 않겠습니다. 이제 전체 월급 계획을 확인해 주세요.',
     ].join('\n\n'),
-    profilePatch: { customUses: adjustedCustomUses },
+    profilePatch: hasChangedCustomUses ? { customUses: adjustedCustomUses } : {},
     monthlySpendingProposal: undefined,
     missingData: [],
     appliedFacts: [],
     nextActionRecommendation: {
-      title: '비상금과 카드값도 볼까요',
+      title: '이번 월급 계획을 확인할까요',
       description:
-        '생활비 쪽 조정을 반영했으니, 이번 달 안전하게 남겨둘 돈을 이어서 확인할 수 있어요.',
-      primaryLabel: '비상금 점검',
-      draft:
-        '현재 비상금과 이번 달 갚아야 할 카드값을 기준으로 월급 배분 우선순위를 점검해 주세요.',
+        '세부 사용처 조정을 마쳤으니 전체 배분을 확인하면 됩니다.',
+      primaryLabel: '계획 보기',
+      draft: '지금까지 반영된 월급 계획 전체를 확인해 주세요.',
     },
   }
 }
@@ -2668,6 +2682,30 @@ function adjustCustomUsesToActualSpending(
     ...customUses.filter((use) => use.bucket === 'goal'),
     ...adjustCustomUseBucket(customUses, 'flexible', actualFlexible),
   ]
+}
+
+function areCustomUsesEquivalent(
+  left: FinancialProfile['customUses'],
+  right: FinancialProfile['customUses'],
+): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+
+  const normalize = (uses: FinancialProfile['customUses']) =>
+    uses
+      .map((use) =>
+        [
+          use.bucket,
+          use.name.trim(),
+          use.amount,
+          use.note.trim(),
+        ].join('|'),
+      )
+      .sort()
+      .join('\n')
+
+  return normalize(left) === normalize(right)
 }
 
 function adjustCustomUseBucket(

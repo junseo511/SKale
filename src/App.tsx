@@ -185,6 +185,9 @@ function App(): ReactNode {
   const [latestRecommendedAction, setLatestRecommendedAction] =
     useState<NextAction | null>(null)
   const [isReplying, setIsReplying] = useState(false)
+  const [replyWaitNotice, setReplyWaitNotice] = useState(
+    '내용을 정리하고 있어요. 최대 30초까지 걸릴 수 있어요.',
+  )
   const [errorMessage, setErrorMessage] = useState('')
   const [isSalaryCalculatorOpen, setIsSalaryCalculatorOpen] =
     useState(false)
@@ -342,6 +345,9 @@ function App(): ReactNode {
     setAttachments([])
     setPendingResponse(null)
     setErrorMessage('')
+    setReplyWaitNotice(
+      createReplyWaitNotice(normalizedDraft, attachments.length),
+    )
     setIsReplying(true)
 
     abortControllerReference.current?.abort()
@@ -397,10 +403,21 @@ function App(): ReactNode {
           applyFinancialProfilePatch(currentProfile, response.profilePatch),
         )
       }
+      const nextMonthlySpending =
+        response.monthlySpendingProposal &&
+        hasReadableMonthlySpendingAmount(response.monthlySpendingProposal)
+          ? stageMonthlySpendingProposal(
+              monthlySpending,
+              response.monthlySpendingProposal,
+            )
+          : monthlySpending
+      if (nextMonthlySpending !== monthlySpending) {
+        setMonthlySpending(nextMonthlySpending)
+      }
       const visibleResponse = createVisiblePendingResponse(
         responseForVisibleProposal,
         profile,
-        monthlySpending,
+        nextMonthlySpending,
       )
       setPendingResponse(visibleResponse)
     } catch (error) {
@@ -591,13 +608,13 @@ function App(): ReactNode {
             <Principle
               icon={<UserRound />}
               title="내 기준 정하기"
-              text="지킬 지출을 남겨요"
+              text="꼭 필요한 지출은 남겨요"
             />
             <ChevronRight size={18} />
             <Principle
               icon={<PiggyBank />}
               title="월급 나누기"
-              text="쓸 돈과 모을 돈을 나눠요"
+              text="앞으로의 지출을 계획해요"
             />
           </div>
         </section>
@@ -638,7 +655,7 @@ function App(): ReactNode {
                     <i />
                     <i />
                     <i />
-                    내용을 정리하고 있어요
+                    {replyWaitNotice}
                   </div>
                 </div>
               )}
@@ -2862,6 +2879,33 @@ function getNextAction(
   }
 }
 
+function createReplyWaitNotice(
+  message: string,
+  attachmentCount: number,
+): string {
+  if (attachmentCount > 0) {
+    return `사용내역 이미지 ${attachmentCount}장을 읽고 있어요. 최대 60초까지 걸릴 수 있어요.`
+  }
+
+  const intent = getActionIntent(message)
+  if (intent === 'investment_research') {
+    return '투자 후보를 비교해 정리하고 있어요. 최대 45초까지 걸릴 수 있어요.'
+  }
+  if (intent === 'spending_distribution') {
+    return '사용내역을 분류하고 있어요. 최대 45초까지 걸릴 수 있어요.'
+  }
+  if (
+    intent === 'detail_plan' ||
+    intent === 'detail_compare' ||
+    intent === 'detail_adjust' ||
+    intent === 'preference_adjust'
+  ) {
+    return '월급 조정안을 정리하고 있어요. 최대 30초까지 걸릴 수 있어요.'
+  }
+
+  return '내용을 정리하고 있어요. 최대 20초까지 걸릴 수 있어요.'
+}
+
 function resolveRecommendedAction(
   latestAction: NextAction | null,
   fallbackAction: NextAction,
@@ -2981,9 +3025,20 @@ function createContextualNextAction(
   }
 
   if (
-    intent === 'detail_plan' ||
-    intent === 'detail_compare' ||
     intent === 'detail_adjust'
+  ) {
+    return {
+      kind: 'plan',
+      title: '이번 월급 계획을 확인할까요',
+      description:
+        '방금 조정한 세부 사용처가 반영됐어요. 이제 전체 배분을 확인하면 됩니다.',
+      primaryLabel: '계획 보기',
+    }
+  }
+
+  if (
+    intent === 'detail_plan' ||
+    intent === 'detail_compare'
   ) {
     return {
       kind: 'message',
@@ -3480,12 +3535,15 @@ function canPrioritizeInvestment(
 }
 
 function toNextAction(recommendation: NextActionRecommendation): NextAction {
+  const isPlanAction =
+    recommendation.primaryLabel.includes('계획 보기') ||
+    recommendation.title.includes('계획을 확인')
   return {
-    kind: 'message',
+    kind: isPlanAction ? 'plan' : 'message',
     title: recommendation.title,
     description: recommendation.description,
     primaryLabel: recommendation.primaryLabel,
-    draft: recommendation.draft,
+    draft: isPlanAction ? undefined : recommendation.draft,
   }
 }
 
@@ -3543,6 +3601,20 @@ function createVisiblePendingResponse(
   }
 
   return hasVisibleProposal(visibleResponse) ? visibleResponse : null
+}
+
+function stageMonthlySpendingProposal(
+  monthlySpending: MonthlySpendingSummary[],
+  proposal: NonNullable<PaydayConversationResponse['monthlySpendingProposal']>,
+): MonthlySpendingSummary[] {
+  return [
+    ...monthlySpending.filter((summary) => summary.month !== proposal.month),
+    {
+      ...proposal,
+      id: crypto.randomUUID(),
+      needReview: true,
+    },
+  ]
 }
 
 function filterRedundantProfilePatch(
