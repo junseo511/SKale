@@ -252,6 +252,7 @@ function App(): ReactNode {
     nextAction,
     profile,
     hasSpendingHistory,
+    messages,
   )
   const shouldShowQuickMessages = completedProfileFields > 0
   const shouldShowNextAction = !isReplying
@@ -2789,16 +2790,43 @@ function resolveRecommendedAction(
   fallbackAction: NextAction,
   profile: FinancialProfile,
   hasSpendingHistory: boolean,
+  messages: ConversationMessage[],
 ): NextAction {
   if (
     latestAction &&
     !isPrematureInvestmentAction(latestAction, profile, hasSpendingHistory) &&
-    !isRedundantRecordAction(latestAction, hasSpendingHistory)
+    !isRedundantRecordAction(latestAction, hasSpendingHistory) &&
+    !isRecentlyRepeatedAction(latestAction, messages)
   ) {
     return latestAction
   }
 
   return fallbackAction
+}
+
+function isRecentlyRepeatedAction(
+  action: NextAction,
+  messages: ConversationMessage[],
+): boolean {
+  if (!action.draft) {
+    return false
+  }
+  const normalizedDraft = normalizeActionText(action.draft)
+  return messages
+    .filter((message) => message.role === 'user')
+    .slice(-3)
+    .some((message) => {
+      const normalizedMessage = normalizeActionText(message.content)
+      return (
+        normalizedMessage === normalizedDraft ||
+        normalizedMessage.includes(normalizedDraft) ||
+        normalizedDraft.includes(normalizedMessage)
+      )
+    })
+}
+
+function normalizeActionText(text: string): string {
+  return text.replace(/\s+/g, '').replace(/[.?!。！？]/g, '').trim()
 }
 
 function isRedundantRecordAction(

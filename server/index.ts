@@ -639,6 +639,16 @@ app.post('/api/payday/chat', async (request, response, next) => {
       return
     }
 
+    const deterministicDetailComparison = createDeterministicDetailComparisonResponse(
+      message,
+      profile,
+      monthlySpending,
+    )
+    if (deterministicDetailComparison) {
+      response.json(deterministicDetailComparison)
+      return
+    }
+
     const deterministicFixedExpenses = createDeterministicFixedExpenseResponse(
       message,
       profile,
@@ -1244,6 +1254,50 @@ function isEmptyModelTextError(error: unknown): boolean {
   return error instanceof Error && error.message.startsWith('답변이 비어 있어요')
 }
 
+function isSpendingDataRequest(message: string): boolean {
+  const normalizedMessage = normalizeKoreanText(message)
+  if (isSafetyPriorityRequest(message) || isInvestmentResearchRequest(message)) {
+    return false
+  }
+  return (
+    normalizedMessage.includes('사용내역') ||
+    normalizedMessage.includes('카드내역') ||
+    normalizedMessage.includes('명세서') ||
+    normalizedMessage.includes('영수증') ||
+    normalizedMessage.includes('지출분포') ||
+    normalizedMessage.includes('카테고리별') ||
+    (
+      normalizedMessage.includes('소비') &&
+      !normalizedMessage.includes('소비줄')
+    )
+  )
+}
+
+function isSafetyPriorityRequest(message: string): boolean {
+  const normalizedMessage = normalizeKoreanText(message)
+  return (
+    normalizedMessage.includes('비상금') ||
+    normalizedMessage.includes('카드값') ||
+    normalizedMessage.includes('카드대금') ||
+    normalizedMessage.includes('대출') ||
+    normalizedMessage.includes('부채') ||
+    normalizedMessage.includes('상환') ||
+    (
+      normalizedMessage.includes('투자') &&
+      (
+        normalizedMessage.includes('전에') ||
+        normalizedMessage.includes('보다먼저') ||
+        normalizedMessage.includes('우선') ||
+        normalizedMessage.includes('안전망')
+      )
+    )
+  )
+}
+
+function isInvestmentResearchRequest(message: string): boolean {
+  return /투자|종목|주식|ETF|포트폴리오|후보|시장|현재가|실적|밸류에이션/.test(message)
+}
+
 function createFallbackPaydayResponse(message: string): {
   reply: string
   profilePatch: Record<string, never>
@@ -1257,15 +1311,28 @@ function createFallbackPaydayResponse(message: string): {
     draft: string
   }
 } {
-  const hasSpendingSummaryRequest =
-    message.includes('카드') ||
-    message.includes('사용내역') ||
-    message.includes('소비') ||
-    message.includes('지출')
-  const hasInvestmentRequest =
-    /투자|종목|주식|ETF|포트폴리오|후보|시장|현재가|실적|밸류에이션/.test(message)
-  const hasSafetyRequest =
-    /비상금|카드값|대출|부채|상환/.test(message)
+  const hasSpendingSummaryRequest = isSpendingDataRequest(message)
+  const hasSafetyRequest = isSafetyPriorityRequest(message)
+  const hasInvestmentRequest = isInvestmentResearchRequest(message)
+
+  if (hasSafetyRequest) {
+    return {
+      reply:
+        '비상금, 카드값, 대출은 투자보다 먼저 확인해야 하는 항목이에요. 이미 알려주신 값은 유지하고, 부족한 항목만 기준으로 월급 배분 우선순위를 정리하겠습니다.',
+      profilePatch: {},
+      monthlySpendingProposal: undefined,
+      missingData: [],
+      appliedFacts: [],
+      nextActionRecommendation: {
+        title: '안전망 우선순위를 볼까요',
+        description:
+          '비상금과 카드값을 먼저 보고 남는 금액만 저축이나 투자로 넘깁니다.',
+        primaryLabel: '우선순위 보기',
+        draft:
+          '현재 저장된 비상금, 카드값, 고정비를 기준으로 이번 달 월급 배분 우선순위를 정리해 주세요.',
+      },
+    }
+  }
 
   if (hasSpendingSummaryRequest) {
     return {
@@ -1299,25 +1366,6 @@ function createFallbackPaydayResponse(message: string): {
         primaryLabel: '조사표 만들기',
         draft:
           '확인된 투자금과 투자 조건을 기준으로 ETF와 후보 종목을 역할별 조사표로 정리해 주세요. 현재가와 재무 데이터는 출처가 있을 때만 써 주세요.',
-      },
-    }
-  }
-
-  if (hasSafetyRequest) {
-    return {
-      reply:
-        '비상금, 카드값, 대출은 투자보다 먼저 확인해야 하는 항목이에요. 이미 알려주신 값은 유지하고, 부족한 항목만 기준으로 월급 배분 우선순위를 정리하겠습니다.',
-      profilePatch: {},
-      monthlySpendingProposal: undefined,
-      missingData: [],
-      appliedFacts: [],
-      nextActionRecommendation: {
-        title: '안전망 우선순위를 볼까요',
-        description:
-          '비상금과 카드값을 먼저 보고 남는 금액만 저축이나 투자로 넘깁니다.',
-        primaryLabel: '우선순위 보기',
-        draft:
-          '현재 저장된 비상금, 카드값, 고정비를 기준으로 이번 달 월급 배분 우선순위를 정리해 주세요.',
       },
     }
   }
@@ -1419,15 +1467,29 @@ function createIntentInstructions(
   const instructions: string[] = []
   const isSpendingRequest =
     attachmentsCount > 0 ||
-    /카드|사용내역|소비|지출|분포|영수증|내역/.test(message)
+    isSpendingDataRequest(message)
+  const isSafetyRequest = isSafetyPriorityRequest(message)
   const isInvestmentRequest =
-    /투자|종목|주식|ETF|포트폴리오|후보|시장|현재가|실적|밸류에이션/.test(message)
+    !isSafetyRequest && isInvestmentResearchRequest(message)
   const isDetailBudgetRequest = isDetailPlanningRequest(message)
+  const isDetailComparison = isDetailComparisonRequest(message)
 
   if (isSpendingRequest) {
     instructions.push(
       'For spending data, create monthlySpendingProposal only from current text/images. Infer target month when visible. Group verifiable expenses into user-friendly categoryBreakdown. Exclude transfers, savings, investments, refunds, and income.',
       'If month or numbers are unclear, set needReview true and ask one concise clarification.',
+    )
+  }
+
+  if (isSafetyRequest) {
+    instructions.push(
+      'For safety-priority requests about emergency fund, card payment, debt, or loan repayment, do not turn the answer into investment research. Check saved facts first and propose a practical monthly allocation priority.',
+    )
+  }
+
+  if (isDetailComparison) {
+    instructions.push(
+      'For requests comparing saved detailed uses with actual card/spending history, do not recreate the same customUses. Compare planned vs actual amounts, identify gaps, and recommend one adjustment step.',
     )
   }
 
@@ -1635,6 +1697,37 @@ function createDeterministicDetailPlanResponse(
     }
   }
 
+  if (profile.customUses.length > 0) {
+    const shouldAdjustExistingUses = isDetailAdjustmentRequest(message)
+    const latestNextAction = shouldAdjustExistingUses
+      ? {
+          title: '차이가 큰 항목을 조정할까요',
+          description:
+            '이미 저장된 세부 사용처를 다시 만들지 않고, 과하거나 부족한 항목만 조정할 수 있어요.',
+          primaryLabel: '조정안 만들기',
+          draft:
+            '최근 사용내역과 저장된 세부 사용처의 차이를 기준으로 과하거나 부족한 항목만 조정해 주세요.',
+        }
+      : {
+          title: '실제 사용내역과 맞춰볼까요',
+          description:
+            '이미 저장된 세부 사용처가 있으니 새로 만들기보다 카드 내역과 비교해 조정할 곳을 찾는 편이 좋아요.',
+          primaryLabel: '사용내역 비교',
+          draft:
+            '최근 카드 내역을 기준으로 저장된 세부 사용처와 실제 지출이 어떻게 다른지 비교해 주세요.',
+        }
+
+    return {
+      reply:
+        '이미 세부 사용처가 저장되어 있어요. 같은 초안을 다시 만들지 않고, 실제 사용내역과 비교하거나 마음에 안 드는 항목만 조정하겠습니다.',
+      profilePatch: {},
+      monthlySpendingProposal: undefined,
+      missingData: [],
+      appliedFacts: [],
+      nextActionRecommendation: latestNextAction,
+    }
+  }
+
   const customUses = createDetailPlanCustomUses(profile)
   if (customUses.length === 0) {
     return {
@@ -1670,6 +1763,100 @@ function createDeterministicDetailPlanResponse(
       primaryLabel: '사용내역 비교',
       draft:
         '최근 카드 내역을 기준으로 저장된 세부 사용처와 실제 지출이 어떻게 다른지 비교해 주세요.',
+    },
+  }
+}
+
+function createDeterministicDetailComparisonResponse(
+  message: string,
+  profile: FinancialProfile,
+  monthlySpending: Array<z.infer<typeof monthlySpendingSummarySchema>>,
+): {
+  reply: string
+  profilePatch: PaydayProfilePatch
+  monthlySpendingProposal: undefined
+  missingData: string[]
+  appliedFacts: string[]
+  nextActionRecommendation: {
+    title: string
+    description: string
+    primaryLabel: string
+    draft: string
+  }
+} | null {
+  if (!isDetailComparisonRequest(message)) {
+    return null
+  }
+
+  const latestSpending = getLatestMonthlySpending(monthlySpending)
+  if (!latestSpending) {
+    return {
+      reply:
+        '비교하려면 먼저 카드 사용내역이 필요해요. 사용내역 사진이나 텍스트를 보내주시면 자료 월을 판단해서 지출 분포부터 정리하겠습니다.',
+      profilePatch: {},
+      monthlySpendingProposal: undefined,
+      missingData: ['카드 사용내역'],
+      appliedFacts: [],
+      nextActionRecommendation: createDefaultNextActionRecommendation(profile),
+    }
+  }
+
+  if (profile.customUses.length === 0) {
+    return {
+      reply:
+        '카드 사용내역은 확인되어 있어요. 다만 비교할 세부 사용처가 아직 없어서, 먼저 이번 월급의 범주별 사용처 초안을 잡겠습니다.',
+      profilePatch: {},
+      monthlySpendingProposal: undefined,
+      missingData: [],
+      appliedFacts: [],
+      nextActionRecommendation: {
+        title: '세부 사용처를 먼저 잡을까요',
+        description:
+          '저장된 월급 계획을 실제 지출 항목으로 나누면 카드 내역과 바로 비교할 수 있어요.',
+        primaryLabel: '세부 계획하기',
+        draft:
+          '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워 주세요.',
+      },
+    }
+  }
+
+  const plannedEssential = sumCustomUses(profile.customUses, 'essential')
+  const plannedFlexible = sumCustomUses(profile.customUses, 'flexible')
+  const actualEssential = latestSpending.essentialExpense ?? 0
+  const actualFlexible = latestSpending.flexibleExpense ?? 0
+  const notableCategories = latestSpending.categoryBreakdown
+    .slice()
+    .sort((left, right) => right.amount - left.amount)
+    .slice(0, 3)
+    .map((item) => `${item.category} ${item.amount.toLocaleString()}원`)
+
+  const comparisonLines = [
+    createDifferenceLine('필수 생활비', plannedEssential, actualEssential),
+    createDifferenceLine('여유 생활비', plannedFlexible, actualFlexible),
+  ]
+  const categoryLine =
+    notableCategories.length > 0
+      ? `가장 큰 실제 지출은 ${notableCategories.join(', ')}입니다.`
+      : '카테고리별 실제 지출은 아직 충분히 세분화되어 있지 않아요.'
+
+  return {
+    reply: [
+      `${formatMonthForReply(latestSpending.month)} 카드 내역과 저장된 세부 사용처를 비교했어요.`,
+      comparisonLines.join('\n'),
+      categoryLine,
+      '차이가 큰 항목부터 조정하면 같은 질문을 반복하지 않고 바로 계획을 다듬을 수 있어요.',
+    ].join('\n\n'),
+    profilePatch: {},
+    monthlySpendingProposal: undefined,
+    missingData: [],
+    appliedFacts: [],
+    nextActionRecommendation: {
+      title: '차이가 큰 항목을 조정할까요',
+      description:
+        '비교 결과를 기준으로 생활비와 여유 지출 중 과하거나 부족한 항목만 다시 배분할 수 있어요.',
+      primaryLabel: '조정안 만들기',
+      draft:
+        '방금 비교 결과를 기준으로 과하거나 부족한 세부 사용처만 골라 월급 계획 조정안을 만들어 주세요.',
     },
   }
 }
@@ -1756,6 +1943,9 @@ function createProactiveDetailPlanIfNeeded(
   if (!isDetailPlanningRequest(message) || !asksForDetailAmounts(reply)) {
     return null
   }
+  if (profile.customUses.length > 0) {
+    return null
+  }
 
   const customUses = createDetailPlanCustomUses(profile)
   if (customUses.length === 0) {
@@ -1776,12 +1966,53 @@ function createProactiveDetailPlanIfNeeded(
 }
 
 function isDetailPlanningRequest(message: string): boolean {
+  if (isDetailComparisonRequest(message)) {
+    return false
+  }
   const normalizedMessage = normalizeKoreanText(message)
   return (
     normalizedMessage.includes('세부사용처') ||
     normalizedMessage.includes('세부계획') ||
     normalizedMessage.includes('각범주') ||
     normalizedMessage.includes('어디에얼마')
+  )
+}
+
+function isDetailComparisonRequest(message: string): boolean {
+  const normalizedMessage = normalizeKoreanText(message)
+  return (
+    (
+      normalizedMessage.includes('비교') ||
+      normalizedMessage.includes('다른지') ||
+      normalizedMessage.includes('차이') ||
+      normalizedMessage.includes('맞춰')
+    ) &&
+    (
+      normalizedMessage.includes('사용내역') ||
+      normalizedMessage.includes('카드내역') ||
+      normalizedMessage.includes('실제지출') ||
+      normalizedMessage.includes('세부사용처') ||
+      normalizedMessage.includes('저장된')
+    )
+  )
+}
+
+function isDetailAdjustmentRequest(message: string): boolean {
+  const normalizedMessage = normalizeKoreanText(message)
+  return (
+    (
+      normalizedMessage.includes('조정') ||
+      normalizedMessage.includes('보완') ||
+      normalizedMessage.includes('과한') ||
+      normalizedMessage.includes('부족') ||
+      normalizedMessage.includes('다시배분')
+    ) &&
+    (
+      normalizedMessage.includes('세부사용처') ||
+      normalizedMessage.includes('사용처') ||
+      normalizedMessage.includes('월급계획') ||
+      normalizedMessage.includes('항목')
+    )
   )
 }
 
@@ -1796,6 +2027,44 @@ function asksForDetailAmounts(reply: string): boolean {
       normalizedReply.includes('사용할지')
     )
   )
+}
+
+function getLatestMonthlySpending(
+  monthlySpending: Array<z.infer<typeof monthlySpendingSummarySchema>>,
+): z.infer<typeof monthlySpendingSummarySchema> | undefined {
+  return monthlySpending
+    .slice()
+    .sort((left, right) => right.month.localeCompare(left.month))[0]
+}
+
+function sumCustomUses(
+  customUses: FinancialProfile['customUses'],
+  bucket: 'essential' | 'goal' | 'flexible',
+): number {
+  return customUses
+    .filter((use) => use.bucket === bucket)
+    .reduce((total, use) => total + use.amount, 0)
+}
+
+function createDifferenceLine(
+  label: string,
+  plannedAmount: number,
+  actualAmount: number,
+): string {
+  const difference = actualAmount - plannedAmount
+  const direction =
+    difference > 0
+      ? `${difference.toLocaleString()}원 초과`
+      : difference < 0
+        ? `${Math.abs(difference).toLocaleString()}원 여유`
+        : '계획과 거의 일치'
+
+  return `- ${label}: 계획 ${plannedAmount.toLocaleString()}원 · 실제 ${actualAmount.toLocaleString()}원 · ${direction}`
+}
+
+function formatMonthForReply(month: string): string {
+  const [year, monthValue] = month.split('-')
+  return `${year}년 ${Number(monthValue)}월`
 }
 
 function createDetailPlanCustomUses(
