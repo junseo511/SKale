@@ -3,6 +3,7 @@ import {
   Bot,
   Calculator,
   CalendarDays,
+  ChartLine as LineChartIcon,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -269,10 +270,6 @@ function App(): ReactNode {
   )
   const shouldShowQuickMessages = completedProfileFields > 0
   const shouldShowNextAction = !isReplying
-  const canShowInvestmentSuggestions =
-    canPrioritizeInvestment(profile, hasSpendingHistory) &&
-    plan !== null &&
-    plan.availableInvestmentAmount > 0
   const effectiveTargetMonth =
     spendingMonthMode === 'manual' ? targetMonth : undefined
   const spendingSummaryPrompt = effectiveTargetMonth
@@ -306,19 +303,12 @@ function App(): ReactNode {
       prompt: '외식과 여행은 줄이고 싶지 않은데, 다른 지출에서 균형을 맞춰 주세요.',
       icon: <MessageCircleMore size={16} />,
     },
-    canShowInvestmentSuggestions
-      ? {
-          label: '미국 주식 위주로 포트폴리오를 구성해 주세요.',
-          prompt: usPortfolioPrompt,
-          icon: <TrendingUp size={16} />,
-        }
-      : {
-          label: '이번 월급의 세부 사용처를 나눠 주세요.',
-          prompt:
-            '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워 주세요.',
-          icon: <FileText size={16} />,
-        },
-  ].filter((message) => !isCompletedActionMessage(message.prompt, completedActionIntents))
+    {
+      label: '미국 주식 위주로 포트폴리오를 구성해 주세요.',
+      prompt: usPortfolioPrompt,
+      icon: <LineChartIcon size={16} />,
+    },
+  ]
   const stockResearchRequest = usPortfolioPrompt
 
   useEffect(() => {
@@ -685,26 +675,25 @@ function App(): ReactNode {
 
             {shouldShowQuickMessages && (
               <div className={`suggestion-section ${isStarterOpen ? 'open' : 'collapsed'}`}>
-                <div className="starter-heading">
+                <button
+                  className="starter-heading"
+                  type="button"
+                  aria-expanded={isStarterOpen}
+                  aria-controls="starter-card-list"
+                  onClick={() => setIsStarterOpen((isOpen) => !isOpen)}
+                >
                   <span>이렇게도 시작해 보세요</span>
-                  <button
-                    type="button"
-                    aria-expanded={isStarterOpen}
-                    aria-label={
-                      isStarterOpen
-                        ? '추천 질문 접기'
-                        : '추천 질문 펼치기'
-                    }
-                    onClick={() => setIsStarterOpen((isOpen) => !isOpen)}
-                  >
+                  <small>{isStarterOpen ? '접기' : '펼치기'}</small>
+                  <i aria-hidden="true">
                     <ChevronRight size={16} />
-                  </button>
-                </div>
+                  </i>
+                </button>
                 <div
+                  id="starter-card-list"
                   className="starter-content"
                   aria-hidden={!isStarterOpen}
                 >
-                  <div className="quick-message-list" aria-label="추천 질문">
+                  <div className="quick-message-list" aria-label="시작 카드">
                     <button
                       className="starter-card calculator-quick-button"
                       type="button"
