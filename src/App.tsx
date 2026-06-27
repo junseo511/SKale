@@ -79,7 +79,6 @@ import {
 } from './domain/paydayPlan'
 import './App.css'
 
-type PortfolioMarket = '한국' | '미국' | '한국·미국'
 type SpendingMonthMode = 'auto' | 'manual'
 type ServerStatus = 'checking' | 'online' | 'offline'
 type NextActionKind = 'salary' | 'message' | 'plan'
@@ -179,8 +178,6 @@ function App(): ReactNode {
     useState(false)
   const [editingProfileField, setEditingProfileField] =
     useState<EditableProfileField | null>(null)
-  const [portfolioMarket, setPortfolioMarket] =
-    useState<PortfolioMarket>('미국')
   const [isStarterOpen, setIsStarterOpen] = useState(true)
   const abortControllerReference = useRef<AbortController | null>(null)
   const scrollPositionBeforeModalReference = useRef(0)
@@ -265,11 +262,15 @@ function App(): ReactNode {
   const spendingSummaryPrompt = effectiveTargetMonth
     ? `${Number(effectiveTargetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해 주세요.`
     : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해 주세요.'
+  const usPortfolioPrompt =
+    plan && plan.availableInvestmentAmount > 0
+      ? `${formatWon(plan.availableInvestmentAmount)}으로 미국 주식을 위주로 투자 포트폴리오를 구성해 주세요. ETF와 개별 종목 후보는 역할별로 나누고, 현재가와 재무 데이터는 출처가 있을 때만 사용해 주세요.`
+      : '미국 주식을 위주로 투자 포트폴리오를 구성해 주세요. 먼저 내 상황에서 투자 가능한 금액과 투자 성향을 확인한 뒤, ETF와 개별 종목 후보를 역할별로 나눠 주세요.'
   const quickMessages = [
     {
       label: effectiveTargetMonth
-        ? `${Number(effectiveTargetMonth.split('-')[1])}월 카드 지출을 분류해 주세요.`
-        : '카드 내역 월을 자동으로 읽고 분류해 주세요.',
+        ? `${Number(effectiveTargetMonth.split('-')[1])}월 지출 분포를 분석해 주세요.`
+        : '사용내역 지출 분포를 분석해 주세요.',
       prompt: spendingSummaryPrompt,
       icon: <CalendarDays size={16} />,
     },
@@ -291,8 +292,8 @@ function App(): ReactNode {
     },
     canShowInvestmentSuggestions
       ? {
-          label: 'SK하이닉스 주식 종목을 분석해 주세요.',
-          prompt: 'SK하이닉스 주식 종목을 분석해 주세요.',
+          label: '미국 주식 위주로 포트폴리오를 구성해 주세요.',
+          prompt: usPortfolioPrompt,
           icon: <TrendingUp size={16} />,
         }
       : {
@@ -302,10 +303,7 @@ function App(): ReactNode {
           icon: <FileText size={16} />,
         },
   ]
-  const stockResearchRequest =
-    plan && plan.availableInvestmentAmount > 0
-      ? `${formatWon(plan.availableInvestmentAmount)}으로 ${portfolioMarket} 시장의 최신 공개자료 기반 투자 후보를 조사해 주세요. 현재가, 최근 실적, 밸류에이션, 주요 뉴스는 출처와 기준일이 확인되는 경우에만 쓰고, 확인되지 않으면 모른다고 말해 주세요. 매수 지시가 아니라 ETF와 개별 종목 후보를 역할별로 비교하고, 각 후보의 비중 초안·선정 근거·주요 위험·추가 확인 자료를 표로 정리해 주세요.`
-      : `${portfolioMarket} 시장의 최신 공개자료 기반 투자 후보를 조사해 주세요. 먼저 내 상황에서 투자 가능한 금액과 투자 성향을 확인한 뒤, 현재가와 재무 데이터는 출처가 있을 때만 후보 비교에 써 주세요.`
+  const stockResearchRequest = usPortfolioPrompt
 
   useEffect(() => {
     if (hasUserMessage) {
@@ -712,60 +710,6 @@ function App(): ReactNode {
                         <small>{message.label}</small>
                       </button>
                     ))}
-                    {canShowInvestmentSuggestions ? (
-                    <div className="portfolio-suggestion-card">
-                      <p>
-                        이번 달 투자금으로 포트폴리오를 구성해 주세요.
-                      </p>
-                      <div className="market-selector" aria-label="투자 시장 선택">
-                        {(['한국', '미국', '한국·미국'] as PortfolioMarket[]).map(
-                          (market) => (
-                            <button
-                              className={
-                                portfolioMarket === market ? 'selected' : ''
-                              }
-                              type="button"
-                              disabled={!isStarterOpen}
-                              key={market}
-                              onClick={() => setPortfolioMarket(market)}
-                            >
-                              {market === '한국·미국' ? '둘 다' : market}
-                            </button>
-                          ),
-                        )}
-                      </div>
-                      <button
-                        className="portfolio-request-button"
-                        type="button"
-                        disabled={!isStarterOpen}
-                        onClick={() => setDraft(stockResearchRequest)}
-                      >
-                        {plan && plan.availableInvestmentAmount > 0
-                          ? '종목 조사하기'
-                          : '먼저 계산하기'}
-                        <ChevronRight size={16} />
-                      </button>
-                    </div>
-                    ) : (
-                    <div className="portfolio-suggestion-card">
-                      <p>
-                        월급을 먼저 생활비, 비상금, 목표 자금으로 나눠 주세요.
-                      </p>
-                      <button
-                        className="portfolio-request-button"
-                        type="button"
-                        disabled={!isStarterOpen}
-                        onClick={() =>
-                          setDraft(
-                            '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워 주세요.',
-                          )
-                        }
-                      >
-                        세부 계획하기
-                        <ChevronRight size={16} />
-                      </button>
-                    </div>
-                    )}
                   </div>
                 </div>
               </div>

@@ -120,15 +120,6 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .starter-card small { display: -webkit-box; overflow: hidden; color: #51494b; font-size: 13px; line-height: 1.5; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .quick-message-list .calculator-quick-button { border-color: #ffc2cd; color: #d90029; background: #fff7f8; font-weight: 750; }
 .quick-message-list .calculator-quick-button span { color: white; background: var(--sk-red); }
-.portfolio-suggestion-card { display: grid; min-height: 116px; padding: 13px; border: 1px solid #e4dcdd; border-radius: 12px; background: white; grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(220px, .7fr); gap: 10px 12px; }
-.portfolio-suggestion-card > p { margin: 0; color: #51494b; font-size: 13px; line-height: 1.5; }
-.portfolio-suggestion-card > p { align-self: center; }
-.market-selector { display: grid; padding: 3px; border-radius: 9px; background: #f2eded; grid-template-columns: repeat(3, 1fr); gap: 3px; }
-.market-selector button { min-height: 30px; padding: 0 7px; border: 0; border-radius: 7px; color: #786e70; background: transparent; font-size: 12px; text-align: center; justify-content: center; }
-.market-selector button.selected { color: #d90029; background: white; box-shadow: 0 2px 8px rgba(234, 0, 44, .08); font-weight: 800; }
-.portfolio-suggestion-card .market-selector { align-self: end; }
-.portfolio-suggestion-card .portfolio-request-button { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 5px; padding: 0 12px; border: 1px solid #ffc2cd; border-radius: 10px; color: #d90029; background: #fff2f4; font-size: 12px; font-weight: 800; grid-column: 2; cursor: pointer; }
-.portfolio-suggestion-card .portfolio-request-button svg { flex: 0 0 auto; }
 .attachment-preview-list { display: flex; padding: 12px 20px 0; flex-wrap: wrap; gap: 8px; }
 .attachment-preview { display: grid; overflow: hidden; width: 145px; height: 48px; padding: 5px; border: 1px solid #e6dedf; border-radius: 10px; background: #faf7f7; align-items: center; grid-template-columns: 38px 1fr 24px; gap: 6px; }
 .attachment-preview img { width: 38px; height: 38px; border-radius: 7px; object-fit: cover; }
@@ -387,8 +378,6 @@ footer > span { text-align: right; }
   .suggestion-section { padding: 14px 13px 0; }
   .quick-message-list { grid-template-columns: 1fr; }
   .attachment-preview-list { padding-left: 13px; padding-right: 13px; }
-  .portfolio-suggestion-card { grid-column: auto; grid-template-columns: 1fr; }
-  .portfolio-suggestion-card .portfolio-request-button { grid-column: auto; }
   .composer { margin-left: 13px; margin-right: 13px; }
   .composer-footer { align-items: stretch; flex-direction: column; }
   .attachment-actions { justify-content: space-between; }
