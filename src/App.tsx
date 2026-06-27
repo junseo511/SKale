@@ -1401,27 +1401,56 @@ function ProposalCards({
 function renderAgentMessageContent(content: string): ReactNode {
   const table = parseMarkdownTable(content)
   if (!table) {
-    return <p>{content}</p>
+    return <p>{renderInlineMarkdown(content)}</p>
   }
 
   return (
     <>
-      {table.before && <p>{table.before}</p>}
+      {table.before && <p>{renderInlineMarkdown(table.before)}</p>}
       <div className="message-table-cards">
         {table.rows.map((row, rowIndex) => (
           <article key={`${row[0] ?? 'row'}-${rowIndex}`}>
             {table.headers.map((header, headerIndex) => (
               <div key={`${header}-${headerIndex}`}>
-                <span>{header}</span>
-                <strong>{row[headerIndex] || '-'}</strong>
+                <span>{stripInlineMarkdown(header)}</span>
+                <strong>{stripInlineMarkdown(row[headerIndex] || '-')}</strong>
               </div>
             ))}
           </article>
         ))}
       </div>
-      {table.after && <p>{table.after}</p>}
+      {table.after && <p>{renderInlineMarkdown(table.after)}</p>}
     </>
   )
+}
+
+function renderInlineMarkdown(content: string): ReactNode[] {
+  const nodes: ReactNode[] = []
+  const emphasisPattern = /\*\*([^*\n](?:[\s\S]*?[^*\n])?)\*\*/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = emphasisPattern.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(content.slice(lastIndex, match.index))
+    }
+    nodes.push(
+      <strong key={`strong-${match.index}`}>
+        {match[1]}
+      </strong>,
+    )
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < content.length) {
+    nodes.push(content.slice(lastIndex))
+  }
+
+  return nodes
+}
+
+function stripInlineMarkdown(content: string): string {
+  return content.replace(/\*\*([^*\n](?:[\s\S]*?[^*\n])?)\*\*/g, '$1')
 }
 
 function parseMarkdownTable(content: string): {
@@ -2875,15 +2904,15 @@ function createReplyWaitNotice(
   attachmentCount: number,
 ): string {
   if (attachmentCount > 0) {
-    return `사용내역 이미지 ${attachmentCount}장을 읽고 있어요. 최대 60초까지 걸릴 수 있어요.`
+    return `사용내역 이미지 ${attachmentCount}장을 읽고 있어요. 최대 1분 까지 걸릴 수 있어요.`
   }
 
   const intent = getActionIntent(message)
   if (intent === 'investment_research') {
-    return '투자 후보를 비교해 정리하고 있어요. 최대 45초까지 걸릴 수 있어요.'
+    return '투자 후보를 비교해 정리하고 있어요. 최대 45초 까지 걸릴 수 있어요.'
   }
   if (intent === 'spending_distribution') {
-    return '사용내역을 분류하고 있어요. 최대 45초까지 걸릴 수 있어요.'
+    return '사용내역을 분류하고 있어요. 최대 45초 까지 걸릴 수 있어요.'
   }
   if (
     intent === 'detail_plan' ||
@@ -2891,10 +2920,10 @@ function createReplyWaitNotice(
     intent === 'detail_adjust' ||
     intent === 'preference_adjust'
   ) {
-    return '월급 조정안을 정리하고 있어요. 최대 30초까지 걸릴 수 있어요.'
+    return '월급 조정안을 정리하고 있어요. 최대 30초 까지 걸릴 수 있어요.'
   }
 
-  return '내용을 정리하고 있어요. 최대 20초까지 걸릴 수 있어요.'
+  return '내용을 정리하고 있어요. 최대 20초 까지 걸릴 수 있어요.'
 }
 
 function resolveRecommendedAction(
