@@ -709,7 +709,7 @@ function App(): ReactNode {
                   aria-controls="starter-card-list"
                   onClick={() => setIsStarterOpen((isOpen) => !isOpen)}
                 >
-                  <span>이렇게도 시작해 보세요</span>
+                  <span>이렇게도 질문해 보세요</span>
                   <small>{isStarterOpen ? '접기' : '펼치기'}</small>
                   <i aria-hidden="true">
                     <ChevronRight size={16} />
