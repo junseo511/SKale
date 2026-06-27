@@ -136,6 +136,7 @@ const paydayConversationAppContextSchema = z.object({
     'budget_detail_ready',
     'investment_ready',
   ]),
+  completedActions: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
   confirmedFacts: z.array(z.string().trim().min(1).max(200)).max(20),
   planSnapshot: z.object({
     monthlySalary: z.number().nonnegative().nullable(),
@@ -636,6 +637,16 @@ app.post('/api/payday/chat', async (request, response, next) => {
         appliedFacts: [],
         nextActionRecommendation: createDefaultNextActionRecommendation(profile),
       })
+      return
+    }
+
+    const deterministicDetailAdjustment = createDeterministicDetailAdjustmentResponse(
+      message,
+      profile,
+      monthlySpending,
+    )
+    if (deterministicDetailAdjustment) {
+      response.json(deterministicDetailAdjustment)
       return
     }
 
@@ -1449,6 +1460,7 @@ function createFlowInstructions(
     'Use Application flow context as the strongest signal for nextActionRecommendation.',
     'Follow recommendationPolicy.priority and avoid recommendationPolicy.avoid unless the current user explicitly asks otherwise.',
     'Treat confirmedFacts as already known; do not ask the user to repeat them.',
+    'Treat completedActions as already handled user intents. Do not recommend the same completed action again; choose a different next action.',
   ]
 
   if (appContext?.stage === 'salary_only') {
@@ -1703,7 +1715,7 @@ function createDeterministicDetailPlanResponse(
       ? {
           title: '차이가 큰 항목을 조정할까요',
           description:
-            '이미 저장된 세부 사용처를 다시 만들지 않고, 과하거나 부족한 항목만 조정할 수 있어요.',
+            '저장된 세부 사용처에서 과하거나 부족한 항목만 조정할 수 있어요.',
           primaryLabel: '조정안 만들기',
           draft:
             '최근 사용내역과 저장된 세부 사용처의 차이를 기준으로 과하거나 부족한 항목만 조정해 주세요.',
@@ -1719,7 +1731,7 @@ function createDeterministicDetailPlanResponse(
 
     return {
       reply:
-        '이미 세부 사용처가 저장되어 있어요. 같은 초안을 다시 만들지 않고, 실제 사용내역과 비교하거나 마음에 안 드는 항목만 조정하겠습니다.',
+        '이미 세부 사용처가 저장되어 있어요. 실제 사용내역과 비교하거나 마음에 안 드는 항목만 조정하겠습니다.',
       profilePatch: {},
       monthlySpendingProposal: undefined,
       missingData: [],
@@ -1844,7 +1856,7 @@ function createDeterministicDetailComparisonResponse(
       `${formatMonthForReply(latestSpending.month)} 카드 내역과 저장된 세부 사용처를 비교했어요.`,
       comparisonLines.join('\n'),
       categoryLine,
-      '차이가 큰 항목부터 조정하면 같은 질문을 반복하지 않고 바로 계획을 다듬을 수 있어요.',
+      '여유 생활비 쪽을 먼저 조정하면 이번 월급 계획에 더 가깝게 맞출 수 있어요.',
     ].join('\n\n'),
     profilePatch: {},
     monthlySpendingProposal: undefined,
@@ -1853,10 +1865,73 @@ function createDeterministicDetailComparisonResponse(
     nextActionRecommendation: {
       title: '차이가 큰 항목을 조정할까요',
       description:
-        '비교 결과를 기준으로 생활비와 여유 지출 중 과하거나 부족한 항목만 다시 배분할 수 있어요.',
+        '생활비와 여유 지출 중 차이가 큰 항목만 다시 배분할 수 있어요.',
       primaryLabel: '조정안 만들기',
       draft:
         '방금 비교 결과를 기준으로 과하거나 부족한 세부 사용처만 골라 월급 계획 조정안을 만들어 주세요.',
+    },
+  }
+}
+
+function createDeterministicDetailAdjustmentResponse(
+  message: string,
+  profile: FinancialProfile,
+  monthlySpending: Array<z.infer<typeof monthlySpendingSummarySchema>>,
+): {
+  reply: string
+  profilePatch: PaydayProfilePatch
+  monthlySpendingProposal: undefined
+  missingData: string[]
+  appliedFacts: string[]
+  nextActionRecommendation: {
+    title: string
+    description: string
+    primaryLabel: string
+    draft: string
+  }
+} | null {
+  if (!isDetailAdjustmentRequest(message)) {
+    return null
+  }
+
+  const latestSpending = getLatestMonthlySpending(monthlySpending)
+  if (!latestSpending || profile.customUses.length === 0) {
+    return null
+  }
+
+  const actualEssential = latestSpending.essentialExpense ?? 0
+  const actualFlexible = latestSpending.flexibleExpense ?? 0
+  const adjustedCustomUses = adjustCustomUsesToActualSpending(
+    profile.customUses,
+    actualEssential,
+    actualFlexible,
+  )
+  const plannedEssential = sumCustomUses(profile.customUses, 'essential')
+  const plannedFlexible = sumCustomUses(profile.customUses, 'flexible')
+  const adjustedEssential = sumCustomUses(adjustedCustomUses, 'essential')
+  const adjustedFlexible = sumCustomUses(adjustedCustomUses, 'flexible')
+
+  return {
+    reply: [
+      `${formatMonthForReply(latestSpending.month)} 지출을 기준으로 세부 사용처를 조정했어요.`,
+      [
+        createAdjustmentLine('필수 생활비', plannedEssential, adjustedEssential),
+        createAdjustmentLine('여유 생활비', plannedFlexible, adjustedFlexible),
+      ].join('\n'),
+      describeCustomUses(adjustedCustomUses),
+      '이 금액으로 반영해둘게요. 바꾸고 싶은 항목만 다시 말해주시면 됩니다.',
+    ].join('\n\n'),
+    profilePatch: { customUses: adjustedCustomUses },
+    monthlySpendingProposal: undefined,
+    missingData: [],
+    appliedFacts: [],
+    nextActionRecommendation: {
+      title: '비상금과 카드값도 볼까요',
+      description:
+        '생활비 쪽 조정을 반영했으니, 이번 달 안전하게 남겨둘 돈을 이어서 확인할 수 있어요.',
+      primaryLabel: '비상금 점검',
+      draft:
+        '현재 비상금과 이번 달 갚아야 할 카드값을 기준으로 월급 배분 우선순위를 점검해 주세요.',
     },
   }
 }
@@ -2046,6 +2121,51 @@ function sumCustomUses(
     .reduce((total, use) => total + use.amount, 0)
 }
 
+function adjustCustomUsesToActualSpending(
+  customUses: FinancialProfile['customUses'],
+  actualEssential: number,
+  actualFlexible: number,
+): FinancialProfile['customUses'] {
+  return [
+    ...adjustCustomUseBucket(customUses, 'essential', actualEssential),
+    ...customUses.filter((use) => use.bucket === 'goal'),
+    ...adjustCustomUseBucket(customUses, 'flexible', actualFlexible),
+  ]
+}
+
+function adjustCustomUseBucket(
+  customUses: FinancialProfile['customUses'],
+  bucket: 'essential' | 'flexible',
+  targetAmount: number,
+): FinancialProfile['customUses'] {
+  const bucketUses = customUses.filter((use) => use.bucket === bucket)
+  if (bucketUses.length === 0 || targetAmount <= 0) {
+    return bucketUses
+  }
+
+  const currentTotal = bucketUses.reduce((total, use) => total + use.amount, 0)
+  if (currentTotal <= 0) {
+    const baseAmount = Math.floor(targetAmount / bucketUses.length)
+    return bucketUses.map((use, index) => ({
+      ...use,
+      amount:
+        index === bucketUses.length - 1
+          ? targetAmount - baseAmount * (bucketUses.length - 1)
+          : baseAmount,
+    }))
+  }
+
+  let allocatedAmount = 0
+  return bucketUses.map((use, index) => {
+    const amount =
+      index === bucketUses.length - 1
+        ? targetAmount - allocatedAmount
+        : Math.round((targetAmount * use.amount) / currentTotal)
+    allocatedAmount += amount
+    return { ...use, amount }
+  })
+}
+
 function createDifferenceLine(
   label: string,
   plannedAmount: number,
@@ -2060,6 +2180,22 @@ function createDifferenceLine(
         : '계획과 거의 일치'
 
   return `- ${label}: 계획 ${plannedAmount.toLocaleString()}원 · 실제 ${actualAmount.toLocaleString()}원 · ${direction}`
+}
+
+function createAdjustmentLine(
+  label: string,
+  previousAmount: number,
+  adjustedAmount: number,
+): string {
+  const difference = adjustedAmount - previousAmount
+  const suffix =
+    difference > 0
+      ? `${difference.toLocaleString()}원 늘림`
+      : difference < 0
+        ? `${Math.abs(difference).toLocaleString()}원 줄임`
+        : '유지'
+
+  return `- ${label}: ${previousAmount.toLocaleString()}원 -> ${adjustedAmount.toLocaleString()}원 (${suffix})`
 }
 
 function formatMonthForReply(month: string): string {

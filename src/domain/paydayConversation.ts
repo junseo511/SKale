@@ -93,6 +93,7 @@ export interface PaydayConversationAppContext {
     | 'spending_ready'
     | 'budget_detail_ready'
     | 'investment_ready'
+  completedActions: string[]
   confirmedFacts: string[]
   planSnapshot: {
     monthlySalary: number | null

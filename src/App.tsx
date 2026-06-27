@@ -118,6 +118,17 @@ interface SecondaryNextAction {
   icon: ReactNode
 }
 
+type ConversationActionIntent =
+  | 'salary'
+  | 'spending_distribution'
+  | 'fixed_costs'
+  | 'safety_check'
+  | 'detail_plan'
+  | 'detail_compare'
+  | 'detail_adjust'
+  | 'investment_research'
+  | 'preference_adjust'
+
 interface SpendingTrendPoint {
   monthLabel: string
   totalExpense: number
@@ -242,6 +253,10 @@ function App(): ReactNode {
   }, [plan])
   const completedProfileFields = countCompletedProfileFields(profile)
   const hasSpendingHistory = monthlySpending.length > 0
+  const completedActionIntents = useMemo(
+    () => createCompletedActionIntents(messages, profile, monthlySpending),
+    [messages, profile, monthlySpending],
+  )
   const nextAction = getNextAction(profile, plan, hasSpendingHistory)
   const hasUserMessage = messages.some((message) => message.role === 'user')
   const recommendedAction = resolveRecommendedAction(
@@ -250,6 +265,7 @@ function App(): ReactNode {
     profile,
     hasSpendingHistory,
     messages,
+    completedActionIntents,
   )
   const shouldShowQuickMessages = completedProfileFields > 0
   const shouldShowNextAction = !isReplying
@@ -302,7 +318,7 @@ function App(): ReactNode {
             '이번 월급 계획의 각 범주별로 실제 어디에 얼마를 쓸지 세부 계획을 같이 세워 주세요.',
           icon: <FileText size={16} />,
         },
-  ]
+  ].filter((message) => !isCompletedActionMessage(message.prompt, completedActionIntents))
   const stockResearchRequest = usPortfolioPrompt
 
   useEffect(() => {
@@ -359,6 +375,7 @@ function App(): ReactNode {
             plan,
             monthlySpending,
             hasSpendingHistory,
+            completedActionIntents,
           }),
           recentMessages: nextMessages.slice(-8).map((message) => ({
             role: message.role,
@@ -651,6 +668,7 @@ function App(): ReactNode {
                   action={recommendedAction}
                   profile={profile}
                   hasSpendingHistory={hasSpendingHistory}
+                  completedActionIntents={completedActionIntents}
                   plan={plan}
                   stockResearchRequest={stockResearchRequest}
                   targetMonth={effectiveTargetMonth}
@@ -925,6 +943,7 @@ function NextActionPanel({
   action,
   profile,
   hasSpendingHistory,
+  completedActionIntents,
   plan,
   stockResearchRequest,
   targetMonth,
@@ -934,6 +953,7 @@ function NextActionPanel({
   action: NextAction
   profile: FinancialProfile
   hasSpendingHistory: boolean
+  completedActionIntents: ConversationActionIntent[]
   plan: PaydayPlan | null
   stockResearchRequest: string
   targetMonth: string | undefined
@@ -944,6 +964,7 @@ function NextActionPanel({
     targetMonth,
     profile,
     hasSpendingHistory,
+    completedActionIntents,
     plan,
     stockResearchRequest,
     primaryDraft: action.draft,
@@ -1004,6 +1025,7 @@ function createSecondaryNextActions({
   targetMonth,
   profile,
   hasSpendingHistory,
+  completedActionIntents,
   plan,
   stockResearchRequest,
   primaryDraft,
@@ -1012,6 +1034,7 @@ function createSecondaryNextActions({
   targetMonth: string | undefined
   profile: FinancialProfile
   hasSpendingHistory: boolean
+  completedActionIntents: ConversationActionIntent[]
   plan: PaydayPlan | null
   stockResearchRequest: string
   primaryDraft: string | undefined
@@ -1129,20 +1152,27 @@ function createSecondaryNextActions({
           preferenceAction,
         ]
 
-  return uniqueNextActions(candidates, primaryDraft, primaryText).slice(0, 3)
+  return uniqueNextActions(
+    candidates,
+    primaryDraft,
+    primaryText,
+    completedActionIntents,
+  ).slice(0, 3)
 }
 
 function uniqueNextActions(
   actions: SecondaryNextAction[],
   excludedMessage: string | undefined,
   primaryText: string,
+  completedActionIntents: ConversationActionIntent[],
 ): SecondaryNextAction[] {
   const seen = new Set<string>()
   return actions.filter((action) => {
     if (
       action.message === excludedMessage ||
       seen.has(action.message) ||
-      isSimilarNextAction(action, primaryText)
+      isSimilarNextAction(action, primaryText) ||
+      isCompletedActionMessage(action.message, completedActionIntents)
     ) {
       return false
     }
@@ -2735,17 +2765,100 @@ function resolveRecommendedAction(
   profile: FinancialProfile,
   hasSpendingHistory: boolean,
   messages: ConversationMessage[],
+  completedActionIntents: ConversationActionIntent[],
 ): NextAction {
   if (
     latestAction &&
     !isPrematureInvestmentAction(latestAction, profile, hasSpendingHistory) &&
     !isRedundantRecordAction(latestAction, hasSpendingHistory) &&
-    !isRecentlyRepeatedAction(latestAction, messages)
+    !isRecentlyRepeatedAction(latestAction, messages) &&
+    !isCompletedNextAction(latestAction, completedActionIntents)
   ) {
     return latestAction
   }
 
+  if (
+    isRecentlyRepeatedAction(fallbackAction, messages) ||
+    isCompletedNextAction(fallbackAction, completedActionIntents)
+  ) {
+    return createAlternativeNextAction(
+      profile,
+      hasSpendingHistory,
+      completedActionIntents,
+    )
+  }
+
   return fallbackAction
+}
+
+function createAlternativeNextAction(
+  profile: FinancialProfile,
+  hasSpendingHistory: boolean,
+  completedActionIntents: ConversationActionIntent[],
+): NextAction {
+  if (
+    (profile.currentEmergencyFund === null || profile.debtPayment === null) &&
+    !completedActionIntents.includes('safety_check')
+  ) {
+    return {
+      kind: 'message',
+      title: '비상금과 카드값도 볼까요',
+      description:
+        '생활비 계획을 잡았으니, 이번 달 먼저 지켜둘 안전 자금을 확인할 수 있어요.',
+      primaryLabel: '비상금 점검',
+      draft:
+        '현재 비상금과 이번 달 갚아야 할 카드값을 기준으로 월급 배분 우선순위를 점검해 주세요.',
+    }
+  }
+
+  if (
+    hasSpendingHistory &&
+    profile.customUses.length > 0 &&
+    !completedActionIntents.includes('detail_adjust')
+  ) {
+    return {
+      kind: 'message',
+      title: '차이가 큰 항목을 조정할까요',
+      description:
+        '실제 지출에 맞춰 생활비와 여유 생활비 금액을 다시 맞출 수 있어요.',
+      primaryLabel: '조정안 만들기',
+      draft:
+        '최근 사용내역과 저장된 세부 사용처의 차이를 기준으로 과하거나 부족한 항목만 조정해 주세요.',
+    }
+  }
+
+  if (!completedActionIntents.includes('preference_adjust')) {
+    return {
+      kind: 'message',
+      title: '지키고 싶은 소비를 반영할까요',
+      description:
+        '외식, 여행, 취미처럼 줄이고 싶지 않은 항목을 남긴 채 다른 금액을 조정할 수 있어요.',
+      primaryLabel: '취향 반영',
+      draft:
+        '외식과 여행은 지키면서 다른 지출에서 균형을 맞추는 월급 조정안을 제안해 주세요.',
+    }
+  }
+
+  return {
+    kind: 'plan',
+    title: '이번 월급 계획을 볼 수 있어요',
+    description:
+      '지금까지 반영한 내용을 기준으로 전체 배분을 확인할 수 있어요.',
+    primaryLabel: '계획 보기',
+  }
+}
+
+function isCompletedNextAction(
+  action: NextAction,
+  completedActionIntents: ConversationActionIntent[],
+): boolean {
+  const actionText = [
+    action.title,
+    action.description,
+    action.primaryLabel,
+    action.draft ?? '',
+  ].join(' ')
+  return isCompletedActionMessage(actionText, completedActionIntents)
 }
 
 function isRecentlyRepeatedAction(
@@ -2767,6 +2880,142 @@ function isRecentlyRepeatedAction(
         normalizedDraft.includes(normalizedMessage)
       )
     })
+}
+
+function createCompletedActionIntents(
+  messages: ConversationMessage[],
+  profile: FinancialProfile,
+  monthlySpending: MonthlySpendingSummary[],
+): ConversationActionIntent[] {
+  const completedIntents = new Set<ConversationActionIntent>()
+
+  if (profile.monthlySalary !== null) {
+    completedIntents.add('salary')
+  }
+  if (monthlySpending.length > 0) {
+    completedIntents.add('spending_distribution')
+  }
+  if (profile.customUses.length > 0) {
+    completedIntents.add('detail_plan')
+  }
+  if (profile.essentialExpense !== null || profile.customUses.some((use) => use.bucket === 'essential')) {
+    completedIntents.add('fixed_costs')
+  }
+  if (profile.currentEmergencyFund !== null && profile.debtPayment !== null) {
+    completedIntents.add('safety_check')
+  }
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]
+    if (message.role !== 'user' || message.status !== 'sent') {
+      continue
+    }
+    const intent = getActionIntent(message.content)
+    if (!intent) {
+      continue
+    }
+    const hasAgentReply = messages
+      .slice(index + 1)
+      .some((nextMessage) => nextMessage.role === 'agent' && nextMessage.status === 'sent')
+    if (hasAgentReply) {
+      completedIntents.add(intent)
+    }
+  }
+
+  return [...completedIntents]
+}
+
+function isCompletedActionMessage(
+  message: string,
+  completedActionIntents: ConversationActionIntent[],
+): boolean {
+  const intent = getActionIntent(message)
+  return intent !== null && completedActionIntents.includes(intent)
+}
+
+function getActionIntent(message: string): ConversationActionIntent | null {
+  const normalizedMessage = normalizeActionText(message)
+
+  if (
+    normalizedMessage.includes('조정안') ||
+    normalizedMessage.includes('조정해') ||
+    normalizedMessage.includes('보완안') ||
+    normalizedMessage.includes('부족한항목') ||
+    normalizedMessage.includes('과한항목')
+  ) {
+    return 'detail_adjust'
+  }
+  if (
+    normalizedMessage.includes('비교') ||
+    normalizedMessage.includes('다른지') ||
+    normalizedMessage.includes('차이') ||
+    normalizedMessage.includes('맞춰')
+  ) {
+    return 'detail_compare'
+  }
+  if (
+    normalizedMessage.includes('세부계획') ||
+    normalizedMessage.includes('세부사용처') ||
+    normalizedMessage.includes('각범주') ||
+    normalizedMessage.includes('어디에얼마')
+  ) {
+    return 'detail_plan'
+  }
+  if (
+    normalizedMessage.includes('비상금') ||
+    normalizedMessage.includes('카드값') ||
+    normalizedMessage.includes('카드대금') ||
+    normalizedMessage.includes('대출') ||
+    normalizedMessage.includes('부채') ||
+    normalizedMessage.includes('상환') ||
+    normalizedMessage.includes('안전망')
+  ) {
+    return 'safety_check'
+  }
+  if (
+    normalizedMessage.includes('월세') ||
+    normalizedMessage.includes('보험료') ||
+    normalizedMessage.includes('통신비') ||
+    normalizedMessage.includes('관리비') ||
+    normalizedMessage.includes('고정비')
+  ) {
+    return 'fixed_costs'
+  }
+  if (
+    normalizedMessage.includes('사용내역') ||
+    normalizedMessage.includes('카드내역') ||
+    normalizedMessage.includes('지출분포') ||
+    normalizedMessage.includes('카테고리별') ||
+    normalizedMessage.includes('명세서')
+  ) {
+    return 'spending_distribution'
+  }
+  if (
+    normalizedMessage.includes('투자') ||
+    normalizedMessage.includes('포트폴리오') ||
+    normalizedMessage.includes('종목') ||
+    normalizedMessage.includes('주식') ||
+    normalizedMessage.includes('ETF')
+  ) {
+    return 'investment_research'
+  }
+  if (
+    normalizedMessage.includes('외식') ||
+    normalizedMessage.includes('여행') ||
+    normalizedMessage.includes('취향') ||
+    normalizedMessage.includes('줄이고싶지')
+  ) {
+    return 'preference_adjust'
+  }
+  if (
+    normalizedMessage.includes('월실수령액') ||
+    normalizedMessage.includes('실수령액') ||
+    normalizedMessage.includes('월급')
+  ) {
+    return 'salary'
+  }
+
+  return null
 }
 
 function normalizeActionText(text: string): string {
@@ -2815,17 +3064,20 @@ function createConversationAppContext({
   plan,
   monthlySpending,
   hasSpendingHistory,
+  completedActionIntents,
 }: {
   profile: FinancialProfile
   plan: PaydayPlan | null
   monthlySpending: MonthlySpendingSummary[]
   hasSpendingHistory: boolean
+  completedActionIntents: ConversationActionIntent[]
 }): PaydayConversationAppContext {
   const canSuggestInvestment = canPrioritizeInvestment(profile, hasSpendingHistory)
   const stage = getConversationStage(profile, plan, hasSpendingHistory)
 
   return {
     stage,
+    completedActions: completedActionIntents,
     confirmedFacts: createConfirmedFacts(profile, monthlySpending),
     planSnapshot: {
       monthlySalary: profile.monthlySalary,
