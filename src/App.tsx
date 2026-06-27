@@ -457,7 +457,7 @@ function App(): ReactNode {
 
   function applyMonthlySpendingProposal(isReviewed = false): void {
     const proposal = pendingResponse?.monthlySpendingProposal
-    if (!proposal) {
+    if (!proposal || !hasReadableMonthlySpendingAmount(proposal)) {
       return
     }
     setMonthlySpending((currentSummaries) => [
@@ -1192,6 +1192,11 @@ function MessageBubble({
 }: {
   message: ConversationMessage
 }): ReactNode {
+  const renderedContent =
+    message.role === 'agent'
+      ? renderAgentMessageContent(message.content)
+      : message.content
+
   return (
     <div className={`message-row ${message.role}`}>
       <span className="message-avatar">
@@ -1216,7 +1221,7 @@ function MessageBubble({
             )}
           </div>
         )}
-        <p className="message-bubble">{message.content}</p>
+        <div className="message-bubble">{renderedContent}</div>
         {message.status === 'failed' && (
           <small className="failed-message">전송 결과를 받지 못했어요.</small>
         )}
@@ -1241,6 +1246,9 @@ function ProposalCards({
   const profileEntries = getProfilePatchEntries(response.profilePatch)
   const customUses = response.profilePatch.customUses
   const spendingProposal = response.monthlySpendingProposal
+  const isEmptySpendingProposal =
+    spendingProposal !== undefined &&
+    !hasReadableMonthlySpendingAmount(spendingProposal)
 
   if (
     profileEntries.length === 0 &&
@@ -1297,31 +1305,37 @@ function ProposalCards({
       )}
 
       {spendingProposal && (
-        <article className="agent-proposal spending-proposal">
+        <article
+          className={`agent-proposal spending-proposal${isEmptySpendingProposal ? ' empty-spending-proposal' : ''}`}
+        >
           <div className="proposal-heading">
             <span>
               <CalendarDays size={15} />
               {formatMonth(spendingProposal.month)} 사용 요약
             </span>
-            <button type="button" onClick={() => onApplyMonthlySpending()}>
-              <Check size={14} />
-              {spendingProposal.needReview ? '임시 추가' : '기록 추가'}
-            </button>
+            {!isEmptySpendingProposal && !spendingProposal.needReview && (
+              <button type="button" onClick={() => onApplyMonthlySpending()}>
+                <Check size={14} />
+                기록 추가
+              </button>
+            )}
           </div>
-          <div className="spending-proposal-grid">
-            <SummaryValue
-              label="총소비"
-              value={formatNullableWon(spendingProposal.totalExpense)}
-            />
-            <SummaryValue
-              label="필수지출"
-              value={formatNullableWon(spendingProposal.essentialExpense)}
-            />
-            <SummaryValue
-              label="선택지출"
-              value={formatNullableWon(spendingProposal.flexibleExpense)}
-            />
-          </div>
+          {!isEmptySpendingProposal && (
+            <div className="spending-proposal-grid">
+              <SummaryValue
+                label="총소비"
+                value={formatNullableWon(spendingProposal.totalExpense)}
+              />
+              <SummaryValue
+                label="필수지출"
+                value={formatNullableWon(spendingProposal.essentialExpense)}
+              />
+              <SummaryValue
+                label="선택지출"
+                value={formatNullableWon(spendingProposal.flexibleExpense)}
+              />
+            </div>
+          )}
           <p>{spendingProposal.insight}</p>
           {spendingProposal.categoryBreakdown.length > 0 && (
             <CategoryBreakdownList
@@ -1336,7 +1350,22 @@ function ProposalCards({
               ))}
             </div>
           )}
-          {spendingProposal.needReview && (
+          {isEmptySpendingProposal && (
+            <div className="proposal-review-assist">
+              <div>
+                <CircleAlert size={14} />
+                <span>확인할 사용내역이 없어 금액을 기록할 수 없습니다.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onStartMonthlySpendingReview(spendingProposal)}
+              >
+                <MessageCircleMore size={13} />
+                자료 다시 보내기
+              </button>
+            </div>
+          )}
+          {spendingProposal.needReview && !isEmptySpendingProposal && (
             <div className="proposal-review-assist">
               <div>
                 <CircleAlert size={14} />
@@ -1359,6 +1388,91 @@ function ProposalCards({
       )}
     </div>
   )
+}
+
+function renderAgentMessageContent(content: string): ReactNode {
+  const table = parseMarkdownTable(content)
+  if (!table) {
+    return <p>{content}</p>
+  }
+
+  return (
+    <>
+      {table.before && <p>{table.before}</p>}
+      <div className="message-table-cards">
+        {table.rows.map((row, rowIndex) => (
+          <article key={`${row[0] ?? 'row'}-${rowIndex}`}>
+            {table.headers.map((header, headerIndex) => (
+              <div key={`${header}-${headerIndex}`}>
+                <span>{header}</span>
+                <strong>{row[headerIndex] || '-'}</strong>
+              </div>
+            ))}
+          </article>
+        ))}
+      </div>
+      {table.after && <p>{table.after}</p>}
+    </>
+  )
+}
+
+function parseMarkdownTable(content: string): {
+  before: string
+  after: string
+  headers: string[]
+  rows: string[][]
+} | null {
+  const lines = content.split('\n')
+  const separatorIndex = lines.findIndex((line, index) => {
+    if (index === 0 || !isMarkdownTableSeparator(line)) {
+      return false
+    }
+    return splitMarkdownTableRow(lines[index - 1]).length >= 2
+  })
+
+  if (separatorIndex <= 0) {
+    return null
+  }
+
+  const headers = splitMarkdownTableRow(lines[separatorIndex - 1])
+  const rowLines: string[] = []
+  for (let index = separatorIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (splitMarkdownTableRow(line).length !== headers.length) {
+      break
+    }
+    rowLines.push(line)
+  }
+
+  if (rowLines.length === 0) {
+    return null
+  }
+
+  const before = lines.slice(0, separatorIndex - 1).join('\n').trim()
+  const after = lines.slice(separatorIndex + 1 + rowLines.length).join('\n').trim()
+  return {
+    before,
+    after,
+    headers,
+    rows: rowLines.map(splitMarkdownTableRow),
+  }
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)
+}
+
+function splitMarkdownTableRow(line: string): string[] {
+  const trimmedLine = line.trim()
+  if (!trimmedLine.includes('|')) {
+    return []
+  }
+
+  return trimmedLine
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim())
 }
 
 function ProfileCard({
@@ -2756,6 +2870,25 @@ function resolveRecommendedAction(
   messages: ConversationMessage[],
   completedActionIntents: ConversationActionIntent[],
 ): NextAction {
+  const latestUserIntent = getLatestUserIntent(messages)
+  const contextualAction = createContextualNextAction(
+    latestUserIntent,
+    profile,
+    hasSpendingHistory,
+  )
+  if (
+    contextualAction &&
+    (
+      latestAction === null ||
+      !isNextActionAlignedWithIntent(latestAction, latestUserIntent) ||
+      isPrematureInvestmentAction(latestAction, profile, hasSpendingHistory) ||
+      isRedundantRecordAction(latestAction, hasSpendingHistory) ||
+      isRecentlyRepeatedAction(latestAction, messages)
+    )
+  ) {
+    return contextualAction
+  }
+
   if (
     latestAction &&
     !isPrematureInvestmentAction(latestAction, profile, hasSpendingHistory) &&
@@ -2778,6 +2911,133 @@ function resolveRecommendedAction(
   }
 
   return fallbackAction
+}
+
+function getLatestUserIntent(
+  messages: ConversationMessage[],
+): ConversationActionIntent | null {
+  const latestUserMessage = messages
+    .slice()
+    .reverse()
+    .find((message) => message.role === 'user' && message.status === 'sent')
+  return latestUserMessage ? getActionIntent(latestUserMessage.content) : null
+}
+
+function createContextualNextAction(
+  intent: ConversationActionIntent | null,
+  profile: FinancialProfile,
+  hasSpendingHistory: boolean,
+): NextAction | null {
+  if (intent === null) {
+    return null
+  }
+
+  if (intent === 'investment_research') {
+    return {
+      kind: 'message',
+      title: '투자 후보를 이어서 볼까요',
+      description:
+        '방금 요청한 포트폴리오 맥락에서 ETF와 후보군을 더 좁혀 비교할 수 있어요.',
+      primaryLabel: '후보 더 비교',
+      draft:
+        '방금 포트폴리오 초안을 기준으로 ETF와 개별 종목 후보를 더 좁혀서 장단점과 확인할 자료를 비교해 주세요.',
+    }
+  }
+
+  if (intent === 'preference_adjust') {
+    return {
+      kind: 'message',
+      title: '지킨 소비 기준으로 조정할까요',
+      description:
+        '외식과 여행을 유지한 상태에서 줄일 수 있는 항목만 다시 좁혀볼 수 있어요.',
+      primaryLabel: '조정 항목 좁히기',
+      draft:
+        '외식과 여행은 유지하고, 나머지 지출 중 줄일 후보만 우선순위로 정리해 주세요.',
+    }
+  }
+
+  if (intent === 'spending_distribution' && hasSpendingHistory) {
+    return {
+      kind: 'message',
+      title: '분석한 내역으로 조정할까요',
+      description:
+        '이미 확인한 사용내역을 기준으로 과한 항목과 유지할 항목을 나눠볼 수 있어요.',
+      primaryLabel: '지출 조정',
+      draft:
+        '이미 분석한 사용내역을 기준으로 과한 항목과 유지할 항목을 나눠 월급 조정안을 제안해 주세요.',
+    }
+  }
+
+  if (intent === 'safety_check') {
+    return {
+      kind: 'message',
+      title: '안전망 기준으로 이어볼까요',
+      description:
+        '비상금과 카드값을 기준으로 이번 달 먼저 지킬 금액을 더 구체화할 수 있어요.',
+      primaryLabel: '우선순위 구체화',
+      draft:
+        '방금 안전망 점검 결과를 기준으로 이번 달 먼저 지킬 금액과 조정할 금액을 구체화해 주세요.',
+    }
+  }
+
+  if (
+    intent === 'detail_plan' ||
+    intent === 'detail_compare' ||
+    intent === 'detail_adjust'
+  ) {
+    return {
+      kind: 'message',
+      title: '세부 사용처를 이어서 다듬을까요',
+      description:
+        '방금 정한 사용처를 유지하면서 과하거나 부족한 항목만 조정할 수 있어요.',
+      primaryLabel: '세부 항목 다듬기',
+      draft:
+        '방금 정한 세부 사용처를 기준으로 과하거나 부족한 항목만 골라 조정해 주세요.',
+    }
+  }
+
+  if (intent === 'fixed_costs') {
+    return {
+      kind: 'message',
+      title: '고정비 기준으로 이어볼까요',
+      description:
+        '매달 먼저 나갈 돈을 유지하고 변동비에서 조정할 항목을 찾을 수 있어요.',
+      primaryLabel: '변동비 조정',
+      draft:
+        '확인된 고정비는 유지하고, 변동비에서 줄일 수 있는 항목을 우선순위로 정리해 주세요.',
+    }
+  }
+
+  if (intent === 'salary' && profile.monthlySalary !== null) {
+    return {
+      kind: 'message',
+      title: '월급 기준으로 다음을 정할까요',
+      description:
+        '월급 기준은 잡혔으니 사용내역, 고정비, 목표 중 하나를 이어서 반영할 수 있어요.',
+      primaryLabel: '사용내역 반영',
+      draft:
+        '이미 입력한 월급 기준으로 사용내역과 고정비를 반영해 월급 계획을 이어서 정리해 주세요.',
+    }
+  }
+
+  return null
+}
+
+function isNextActionAlignedWithIntent(
+  action: NextAction,
+  intent: ConversationActionIntent | null,
+): boolean {
+  if (intent === null) {
+    return true
+  }
+
+  const actionText = [
+    action.title,
+    action.description,
+    action.primaryLabel,
+    action.draft ?? '',
+  ].join(' ')
+  return getActionIntent(actionText) === intent
 }
 
 function createAlternativeNextAction(
@@ -2926,6 +3186,14 @@ function getActionIntent(message: string): ConversationActionIntent | null {
   const normalizedMessage = normalizeActionText(message)
 
   if (
+    normalizedMessage.includes('외식') ||
+    normalizedMessage.includes('여행') ||
+    normalizedMessage.includes('취향') ||
+    normalizedMessage.includes('줄이고싶지')
+  ) {
+    return 'preference_adjust'
+  }
+  if (
     normalizedMessage.includes('조정안') ||
     normalizedMessage.includes('조정해') ||
     normalizedMessage.includes('보완안') ||
@@ -2987,14 +3255,6 @@ function getActionIntent(message: string): ConversationActionIntent | null {
     normalizedMessage.includes('ETF')
   ) {
     return 'investment_research'
-  }
-  if (
-    normalizedMessage.includes('외식') ||
-    normalizedMessage.includes('여행') ||
-    normalizedMessage.includes('취향') ||
-    normalizedMessage.includes('줄이고싶지')
-  ) {
-    return 'preference_adjust'
   }
   if (
     normalizedMessage.includes('월실수령액') ||
@@ -3270,7 +3530,9 @@ function createVisiblePendingResponse(
   const visibleResponse: PaydayConversationResponse = {
     ...response,
     profilePatch: filterRedundantProfilePatch(response.profilePatch, profile),
-    monthlySpendingProposal: isRedundantMonthlySpendingProposal(
+    monthlySpendingProposal: isInvalidMonthlySpendingProposal(
+      response.monthlySpendingProposal,
+    ) || isRedundantMonthlySpendingProposal(
       response.monthlySpendingProposal,
       monthlySpending,
     )
@@ -3371,6 +3633,33 @@ function isRedundantMonthlySpendingProposal(
       existingSummary.categoryBreakdown,
       proposal.categoryBreakdown,
     )
+  )
+}
+
+function isInvalidMonthlySpendingProposal(
+  proposal: PaydayConversationResponse['monthlySpendingProposal'],
+): boolean {
+  return proposal !== undefined && !hasReadableMonthlySpendingAmount(proposal)
+}
+
+function hasReadableMonthlySpendingAmount(
+  proposal: PaydayConversationResponse['monthlySpendingProposal'],
+): boolean {
+  if (!proposal) {
+    return false
+  }
+
+  const amountFields = [
+    proposal.totalExpense,
+    proposal.essentialExpense,
+    proposal.flexibleExpense,
+  ]
+  const hasPositiveAmount = amountFields.some(
+    (amount) => amount !== null && amount > 0,
+  )
+  return (
+    hasPositiveAmount ||
+    proposal.categoryBreakdown.some((item) => item.amount > 0)
   )
 }
 

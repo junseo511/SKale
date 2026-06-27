@@ -42,6 +42,14 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .message-row.agent .message-avatar { color: var(--sk-red); background: var(--sk-red-soft); }
 .message-row > div { max-width: 76%; }
 .message-bubble { margin: 0; padding: 14px 16px; border: 1px solid #eae3e4; border-radius: 5px 15px 15px 15px; color: #51494b; background: white; font-size: 15px; line-height: 1.6; white-space: pre-wrap; }
+.message-bubble p { margin: 0; }
+.message-bubble p + p, .message-bubble p + .message-table-cards, .message-table-cards + p { margin-top: 12px; }
+.message-table-cards { display: grid; gap: 9px; white-space: normal; }
+.message-table-cards article { display: grid; padding: 11px; border: 1px solid #eee1e3; border-radius: 10px; background: #fffafb; gap: 8px; }
+.message-table-cards article > div { display: grid; gap: 2px; }
+.message-table-cards span { color: #94888b; font-size: 11px; font-weight: 750; }
+.message-table-cards strong { color: #453d3f; font-size: 13px; line-height: 1.45; }
+.message-table-cards article > div:first-child strong { color: #d40028; font-size: 14px; }
 .message-row.agent .message-bubble { border-radius: 15px 5px 15px 15px; }
 .message-row.user .message-bubble { border-color: var(--sk-red); color: white; background: var(--sk-red); }
 .failed-message { display: block; margin-top: 6px; color: #b23b2b; font-size: 12px; text-align: right; }

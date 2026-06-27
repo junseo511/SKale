@@ -253,6 +253,31 @@ const paydayConversationRequestSchema = z
   )
 
 type PaydayConversationAppContext = z.infer<typeof paydayConversationAppContextSchema>
+type MonthlySpendingSummary = z.infer<typeof monthlySpendingSummarySchema>
+type MonthlySpendingProposal = NonNullable<
+  z.infer<typeof paydayConversationModelResponseValidationSchema>['monthlySpendingProposal']
+>
+type NextActionRecommendation = z.infer<
+  typeof paydayConversationModelResponseValidationSchema
+>['nextActionRecommendation']
+type PaydayConversationResponsePayload = {
+  reply: string
+  profilePatch: PaydayProfilePatch
+  monthlySpendingProposal: MonthlySpendingProposal | undefined
+  missingData: string[]
+  appliedFacts: string[]
+  nextActionRecommendation: NextActionRecommendation
+}
+type ConversationIntent =
+  | 'salary'
+  | 'spending_distribution'
+  | 'fixed_costs'
+  | 'safety_check'
+  | 'detail_plan'
+  | 'detail_compare'
+  | 'detail_adjust'
+  | 'investment_research'
+  | 'preference_adjust'
 
 const spendingAnalysisSchema = {
   type: 'object',
@@ -618,6 +643,20 @@ app.post('/api/payday/chat', async (request, response, next) => {
       recentMessages,
     } = parsedRequest.data
     fallbackMessage = message
+
+    if (attachments.length === 0) {
+      const quickResponse = createQuickPaydayConversationResponse({
+        message,
+        profile,
+        monthlySpending,
+        appContext,
+      })
+      if (quickResponse) {
+        response.json(quickResponse)
+        return
+      }
+    }
+
     const hasKnownFinancialContext =
       hasFinancialProfileContext(profile) ||
       monthlySpending.length > 0 ||
@@ -751,6 +790,29 @@ app.post('/api/payday/chat', async (request, response, next) => {
         '저장된 월급 계획을 기준으로 세부 사용처 초안을 만들었어요.',
       ]
     }
+    const requestedMonthlySpendingProposal =
+      result.monthlySpendingProposal ?? undefined
+    const visibleMonthlySpendingProposal = sanitizeMonthlySpendingProposal(
+      requestedMonthlySpendingProposal,
+    )
+    let visibleNextActionRecommendation = sanitizeNextActionRecommendation({
+      recommendation: result.nextActionRecommendation,
+      message,
+      profile,
+      monthlySpending,
+      appContext,
+    })
+    if (
+      requestedMonthlySpendingProposal !== undefined &&
+      visibleMonthlySpendingProposal === undefined
+    ) {
+      visibleReply =
+        '분석할 카드 내역 데이터가 확인되지 않았어요. 분석하려는 월의 카드 사용 내역을 텍스트로 붙여넣거나 이미지를 업로드해 주세요.'
+      visibleMissingData = ['카드 내역 텍스트 또는 사진']
+      visibleAppliedFacts = []
+      visibleNextActionRecommendation =
+        createSpendingDataNextActionRecommendation()
+    }
 
     response.json({
       ...result,
@@ -758,9 +820,8 @@ app.post('/api/payday/chat', async (request, response, next) => {
       profilePatch,
       missingData: visibleMissingData,
       appliedFacts: visibleAppliedFacts,
-      nextActionRecommendation: result.nextActionRecommendation,
-      monthlySpendingProposal:
-        result.monthlySpendingProposal ?? undefined,
+      nextActionRecommendation: visibleNextActionRecommendation,
+      monthlySpendingProposal: visibleMonthlySpendingProposal,
     })
   } catch (error) {
     if (isEmptyModelTextError(error)) {
@@ -1309,6 +1370,260 @@ function isInvestmentResearchRequest(message: string): boolean {
   return /투자|종목|주식|ETF|포트폴리오|후보|시장|현재가|실적|밸류에이션/.test(message)
 }
 
+function createQuickPaydayConversationResponse({
+  message,
+  profile,
+  monthlySpending,
+  appContext,
+}: {
+  message: string
+  profile: FinancialProfile
+  monthlySpending: MonthlySpendingSummary[]
+  appContext: PaydayConversationAppContext | undefined
+}): PaydayConversationResponsePayload | null {
+  const intentText = normalizeQuickIntentText(message)
+  if (!intentText) {
+    return null
+  }
+  const hasActionableFinancialInput = hasQuickActionableFinancialInput(message)
+
+  if (isGreetingIntent(intentText)) {
+    return createStaticPaydayResponse(
+      '안녕하세요. 월급이 들어왔을 때 쓸 돈, 지킬 돈, 남은 돈을 나눠서 같이 정리해드릴게요.',
+      profile,
+    )
+  }
+
+  if (isThanksIntent(intentText)) {
+    return createStaticPaydayResponse(
+      '좋아요. 지금 저장된 정보는 유지해둘게요. 다음에 조정할 항목만 말해주시면 이어서 정리하겠습니다.',
+      profile,
+    )
+  }
+
+  if (isAcknowledgementIntent(intentText)) {
+    const nextAction = createDefaultNextActionRecommendation(profile)
+    return createStaticPaydayResponse(
+      `${nextAction.title} ${nextAction.description}`,
+      profile,
+      nextAction,
+    )
+  }
+
+  if (isCapabilityQuestionIntent(intentText)) {
+    return createStaticPaydayResponse(
+      [
+        '저는 월급을 받은 뒤 돈을 어떻게 나눌지 정리하는 Agent예요.',
+        '월급·고정비·카드값·비상금·목표 저축을 확인하고, 사용내역을 보내주시면 지출 분포까지 이어서 정리할 수 있어요.',
+      ].join('\n'),
+      profile,
+    )
+  }
+
+  if (
+    !hasActionableFinancialInput &&
+    isCurrentPlanSummaryIntent(intentText)
+  ) {
+    return createPlanSummaryResponse(profile, monthlySpending, appContext)
+  }
+
+  if (
+    !hasActionableFinancialInput &&
+    !isInvestmentResearchRequest(message) &&
+    isNextStepQuestionIntent(intentText)
+  ) {
+    const nextAction = createDefaultNextActionRecommendation(profile)
+    return createStaticPaydayResponse(
+      `${nextAction.title} ${nextAction.description}`,
+      profile,
+      nextAction,
+    )
+  }
+
+  return null
+}
+
+function createStaticPaydayResponse(
+  reply: string,
+  profile: FinancialProfile,
+  nextActionRecommendation = createDefaultNextActionRecommendation(profile),
+): PaydayConversationResponsePayload {
+  return {
+    reply,
+    profilePatch: {},
+    monthlySpendingProposal: undefined,
+    missingData: [],
+    appliedFacts: [],
+    nextActionRecommendation,
+  }
+}
+
+function createPlanSummaryResponse(
+  profile: FinancialProfile,
+  monthlySpending: MonthlySpendingSummary[],
+  appContext: PaydayConversationAppContext | undefined,
+): PaydayConversationResponsePayload {
+  const summaryLines = createKnownPlanSummaryLines(
+    profile,
+    monthlySpending,
+    appContext,
+  )
+  if (summaryLines.length === 0) {
+    return {
+      reply:
+        '아직 저장된 월급 정보가 없어요. 월 실수령액부터 알려주시면 생활비, 목표 자금, 남은 돈 순서로 바로 나눠볼게요.',
+      profilePatch: {},
+      monthlySpendingProposal: undefined,
+      missingData: ['월 실수령액'],
+      appliedFacts: [],
+      nextActionRecommendation: createDefaultNextActionRecommendation(profile),
+    }
+  }
+
+  return {
+    reply: ['현재 저장된 내용은 이렇습니다.', ...summaryLines].join('\n'),
+    profilePatch: {},
+    monthlySpendingProposal: undefined,
+    missingData: [],
+    appliedFacts: [],
+    nextActionRecommendation: createDefaultNextActionRecommendation(profile),
+  }
+}
+
+function createKnownPlanSummaryLines(
+  profile: FinancialProfile,
+  monthlySpending: MonthlySpendingSummary[],
+  appContext: PaydayConversationAppContext | undefined,
+): string[] {
+  const lines: string[] = []
+
+  if (profile.monthlySalary !== null) {
+    lines.push(`- 월 실수령액: ${formatWonForReply(profile.monthlySalary)}`)
+  }
+  if (profile.essentialExpense !== null) {
+    lines.push(`- 필수 생활비: ${formatWonForReply(profile.essentialExpense)}`)
+  }
+  if (profile.debtPayment !== null) {
+    lines.push(`- 카드·부채 결제: ${formatWonForReply(profile.debtPayment)}`)
+  }
+  if (profile.currentEmergencyFund !== null) {
+    lines.push(`- 현재 비상금: ${formatWonForReply(profile.currentEmergencyFund)}`)
+  }
+  if (profile.targetEmergencyFund !== null) {
+    lines.push(`- 비상금 목표: ${formatWonForReply(profile.targetEmergencyFund)}`)
+  }
+  if (profile.goalName.trim()) {
+    const goalAmount =
+      profile.goalMonthlyAmount === null
+        ? ''
+        : ` ${formatWonForReply(profile.goalMonthlyAmount)}`
+    lines.push(`- 목표 자금: ${profile.goalName}${goalAmount}`)
+  }
+  if (profile.flexibleSpending !== null) {
+    lines.push(`- 여유 생활비: ${formatWonForReply(profile.flexibleSpending)}`)
+  }
+  if (profile.riskProfile !== null || profile.investmentHorizon !== null) {
+    lines.push(
+      `- 투자 조건: ${profile.riskProfile ?? '성향 미정'} · ${profile.investmentHorizon ?? '기간 미정'}`,
+    )
+  }
+  if (profile.customUses.length > 0) {
+    lines.push(
+      `- 세부 사용처: ${profile.customUses
+        .slice(0, 4)
+        .map((use) => `${use.name} ${formatWonForReply(use.amount)}`)
+        .join(', ')}`,
+    )
+  }
+
+  const planSnapshot = appContext?.planSnapshot
+  if (planSnapshot?.availableInvestmentAmount !== null && planSnapshot?.availableInvestmentAmount !== undefined) {
+    lines.push(
+      `- 앱 계산 기준 투자 가능 금액: ${formatWonForReply(planSnapshot.availableInvestmentAmount)}`,
+    )
+  }
+  if (planSnapshot?.safetyStatus) {
+    lines.push(`- 안전 상태: ${planSnapshot.safetyStatus}`)
+  }
+
+  const latestSpending = getLatestMonthlySpending(monthlySpending)
+  if (latestSpending) {
+    const totalExpense =
+      latestSpending.totalExpense === null
+        ? '금액 확인 필요'
+        : formatWonForReply(latestSpending.totalExpense)
+    lines.push(
+      `- 최근 사용내역: ${formatMonthForReply(latestSpending.month)} ${totalExpense}`,
+    )
+  }
+
+  return lines
+}
+
+function normalizeQuickIntentText(message: string): string {
+  return normalizeKoreanText(message)
+    .toLowerCase()
+    .replace(/[?？!！.,。~"'`]/g, '')
+}
+
+function hasQuickActionableFinancialInput(message: string): boolean {
+  return (
+    /\d[\d,.\s]*(원|만원|만 원|억|천만)/.test(message) ||
+    extractFixedExpenses(message).length > 0
+  )
+}
+
+function isGreetingIntent(intentText: string): boolean {
+  return ['안녕', '안녕하세요', '하이', 'hello', 'hi', '헬로'].includes(intentText)
+}
+
+function isThanksIntent(intentText: string): boolean {
+  return ['고마워', '고맙습니다', '감사', '감사합니다', '땡큐', 'thanks', 'thankyou'].includes(intentText)
+}
+
+function isAcknowledgementIntent(intentText: string): boolean {
+  return ['좋아', '좋아요', '오케이', 'ok', 'okay', 'ㅇㅋ', '네', '넵', '응', '알겠어', '알겠습니다'].includes(intentText)
+}
+
+function isCapabilityQuestionIntent(intentText: string): boolean {
+  return (
+    intentText.includes('뭐할수있어') ||
+    intentText.includes('무엇을할수있어') ||
+    intentText.includes('어떤걸할수있어') ||
+    intentText.includes('어떻게써') ||
+    intentText.includes('사용법') ||
+    intentText.includes('도움말') ||
+    intentText === 'help'
+  )
+}
+
+function isCurrentPlanSummaryIntent(intentText: string): boolean {
+  return (
+    intentText.includes('현재상태') ||
+    intentText.includes('저장된내용') ||
+    intentText.includes('내정보') ||
+    intentText.includes('계획요약') ||
+    intentText.includes('요약해') ||
+    intentText.includes('정리해줘') ||
+    intentText.includes('상태보여')
+  )
+}
+
+function isNextStepQuestionIntent(intentText: string): boolean {
+  return (
+    intentText.includes('다음뭐') ||
+    intentText.includes('다음단계') ||
+    intentText.includes('이제뭐') ||
+    intentText.includes('뭘하면') ||
+    intentText.includes('뭐하면돼') ||
+    intentText.includes('추천액션')
+  )
+}
+
+function formatWonForReply(value: number): string {
+  return `${Math.round(value).toLocaleString()}원`
+}
+
 function createFallbackPaydayResponse(message: string): {
   reply: string
   profilePatch: Record<string, never>
@@ -1397,6 +1712,226 @@ function createFallbackPaydayResponse(message: string): {
   }
 }
 
+function sanitizeNextActionRecommendation({
+  recommendation,
+  message,
+  profile,
+  monthlySpending,
+  appContext,
+}: {
+  recommendation: NextActionRecommendation
+  message: string
+  profile: FinancialProfile
+  monthlySpending: MonthlySpendingSummary[]
+  appContext: PaydayConversationAppContext | undefined
+}): NextActionRecommendation {
+  const currentIntent = getConversationIntent(message)
+  const recommendedIntent = getConversationIntent(
+    [
+      recommendation.title,
+      recommendation.description,
+      recommendation.primaryLabel,
+      recommendation.draft,
+    ].join(' '),
+  )
+  const completedIntents = new Set<ConversationIntent>(
+    (appContext?.completedActions ?? []) as ConversationIntent[],
+  )
+  if (monthlySpending.length > 0) {
+    completedIntents.add('spending_distribution')
+  }
+
+  const contextualRecommendation = createContextualNextActionRecommendation(
+    currentIntent,
+    profile,
+    monthlySpending,
+  )
+  const isMismatchedCurrentIntent =
+    currentIntent !== null &&
+    recommendedIntent !== null &&
+    recommendedIntent !== currentIntent
+  const repeatsCompletedDifferentIntent =
+    recommendedIntent !== null &&
+    recommendedIntent !== currentIntent &&
+    completedIntents.has(recommendedIntent)
+
+  if (
+    contextualRecommendation &&
+    (isMismatchedCurrentIntent || repeatsCompletedDifferentIntent)
+  ) {
+    return contextualRecommendation
+  }
+
+  if (
+    recommendedIntent === 'spending_distribution' &&
+    currentIntent !== 'spending_distribution' &&
+    monthlySpending.length > 0
+  ) {
+    return contextualRecommendation ?? createDefaultNextActionRecommendation(profile)
+  }
+
+  return recommendation
+}
+
+function createContextualNextActionRecommendation(
+  intent: ConversationIntent | null,
+  profile: FinancialProfile,
+  monthlySpending: MonthlySpendingSummary[],
+): NextActionRecommendation | null {
+  switch (intent) {
+    case 'investment_research':
+      return {
+        title: '투자 후보를 이어서 볼까요',
+        description:
+          '방금 포트폴리오 맥락에서 ETF와 후보군을 더 좁혀 비교합니다.',
+        primaryLabel: '후보 더 비교',
+        draft:
+          '방금 포트폴리오 초안을 기준으로 ETF와 개별 종목 후보를 더 좁혀서 장단점과 확인할 자료를 비교해 주세요.',
+      }
+    case 'preference_adjust':
+      return {
+        title: '지킨 소비 기준으로 조정할까요',
+        description:
+          '외식과 여행을 유지하고 줄일 수 있는 항목만 다시 좁힙니다.',
+        primaryLabel: '조정 항목 좁히기',
+        draft:
+          '외식과 여행은 유지하고, 나머지 지출 중 줄일 후보만 우선순위로 정리해 주세요.',
+      }
+    case 'spending_distribution':
+      return monthlySpending.length > 0
+        ? {
+            title: '분석한 내역으로 조정할까요',
+            description:
+              '이미 확인한 사용내역을 기준으로 과한 항목과 유지할 항목을 나눕니다.',
+            primaryLabel: '지출 조정',
+            draft:
+              '이미 분석한 사용내역을 기준으로 과한 항목과 유지할 항목을 나눠 월급 조정안을 제안해 주세요.',
+          }
+        : createSpendingDataNextActionRecommendation()
+    case 'safety_check':
+      return {
+        title: '안전망 기준으로 이어볼까요',
+        description:
+          '비상금과 카드값을 기준으로 이번 달 먼저 지킬 금액을 구체화합니다.',
+        primaryLabel: '우선순위 구체화',
+        draft:
+          '방금 안전망 점검 결과를 기준으로 이번 달 먼저 지킬 금액과 조정할 금액을 구체화해 주세요.',
+      }
+    case 'detail_plan':
+    case 'detail_compare':
+    case 'detail_adjust':
+      return {
+        title: '세부 사용처를 이어서 다듬을까요',
+        description:
+          '방금 정한 사용처를 유지하면서 과하거나 부족한 항목만 조정합니다.',
+        primaryLabel: '세부 항목 다듬기',
+        draft:
+          '방금 정한 세부 사용처를 기준으로 과하거나 부족한 항목만 골라 조정해 주세요.',
+      }
+    case 'fixed_costs':
+      return {
+        title: '고정비 기준으로 이어볼까요',
+        description:
+          '매달 먼저 나갈 돈을 유지하고 변동비에서 조정할 항목을 찾습니다.',
+        primaryLabel: '변동비 조정',
+        draft:
+          '확인된 고정비는 유지하고, 변동비에서 줄일 수 있는 항목을 우선순위로 정리해 주세요.',
+      }
+    case 'salary':
+      return profile.monthlySalary === null
+        ? createDefaultNextActionRecommendation(profile)
+        : {
+            title: '월급 기준으로 다음을 정할까요',
+            description:
+              '월급 기준은 잡혔으니 사용내역, 고정비, 목표 중 하나를 이어서 반영합니다.',
+            primaryLabel: '사용내역 반영',
+            draft:
+              '이미 입력한 월급 기준으로 사용내역과 고정비를 반영해 월급 계획을 이어서 정리해 주세요.',
+          }
+    default:
+      return null
+  }
+}
+
+function createSpendingDataNextActionRecommendation(): NextActionRecommendation {
+  return {
+    title: '사용내역을 다시 보내주세요',
+    description:
+      '카드 내역 텍스트나 이미지를 받아야 자료 월과 지출 금액을 확인할 수 있어요.',
+    primaryLabel: '사용내역 보내기',
+    draft:
+      '분석할 카드 사용내역을 다시 보낼게요. 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 정리해 주세요.',
+  }
+}
+
+function getConversationIntent(message: string): ConversationIntent | null {
+  const normalizedMessage = normalizeKoreanText(message)
+  if (!normalizedMessage) {
+    return null
+  }
+
+  if (
+    normalizedMessage.includes('외식') ||
+    normalizedMessage.includes('여행') ||
+    normalizedMessage.includes('취향') ||
+    normalizedMessage.includes('줄이고싶지')
+  ) {
+    return 'preference_adjust'
+  }
+  if (
+    normalizedMessage.includes('조정안') ||
+    normalizedMessage.includes('조정해') ||
+    normalizedMessage.includes('보완안') ||
+    normalizedMessage.includes('부족한항목') ||
+    normalizedMessage.includes('과한항목')
+  ) {
+    return 'detail_adjust'
+  }
+  if (
+    normalizedMessage.includes('비교') ||
+    normalizedMessage.includes('다른지') ||
+    normalizedMessage.includes('차이') ||
+    normalizedMessage.includes('맞춰')
+  ) {
+    return 'detail_compare'
+  }
+  if (
+    normalizedMessage.includes('세부계획') ||
+    normalizedMessage.includes('세부사용처') ||
+    normalizedMessage.includes('각범주') ||
+    normalizedMessage.includes('어디에얼마')
+  ) {
+    return 'detail_plan'
+  }
+  if (isSafetyPriorityRequest(message)) {
+    return 'safety_check'
+  }
+  if (
+    normalizedMessage.includes('월세') ||
+    normalizedMessage.includes('보험료') ||
+    normalizedMessage.includes('통신비') ||
+    normalizedMessage.includes('관리비') ||
+    normalizedMessage.includes('고정비')
+  ) {
+    return 'fixed_costs'
+  }
+  if (isSpendingDataRequest(message)) {
+    return 'spending_distribution'
+  }
+  if (isInvestmentResearchRequest(message)) {
+    return 'investment_research'
+  }
+  if (
+    normalizedMessage.includes('월실수령액') ||
+    normalizedMessage.includes('실수령액') ||
+    normalizedMessage.includes('월급')
+  ) {
+    return 'salary'
+  }
+
+  return null
+}
+
 function buildPaydayConversationPrompt({
   profile,
   monthlySpending,
@@ -1447,6 +1982,8 @@ function createBasePaydayInstructions(): string[] {
     'Only put clearly stated or directly visible facts into profilePatch. Return null for unchanged profilePatch fields.',
     'Use user-facing labels 안정형, 균형형, 공격형. Treat 성장형 as 공격형.',
     'Do not ask again for facts already present in Application flow context, confirmed profile, or recent conversation.',
+    'The current user message is authoritative. Continue the user’s current intent instead of pivoting back to a default checklist or older stage.',
+    'nextActionRecommendation must be a natural continuation of the current user message. Do not recommend spending history, safety checks, preferences, or investment research unless that is the current intent or directly necessary to complete it.',
     'The app calculates salary allocations and investable cash. Do not claim the model finalized those amounts.',
     'Always return nextActionRecommendation as a concrete Korean message the user can send next.',
     'If the message is unrelated or unintelligible, answer with a gentle 잘 모르겠어요-style scope guide and return no proposals.',
@@ -1514,8 +2051,8 @@ function createIntentInstructions(
 
   if (isInvestmentRequest) {
     instructions.push(
-      'For investment questions, consider emergency funds, debt/card payments, essential expenses, and short-term goals before investment.',
-      'For investment research requests, include a compact visualizable markdown-style table in reply with columns 역할, 후보, 비중 초안, 근거, 주요 위험, 추가 확인 자료. If current data is missing, write 확인 필요 instead of inventing it.',
+      'For investment questions, answer the investment request directly when an investable amount or portfolio request is provided. Mention safety constraints briefly only as context; do not turn the response into a safety-check question unless investment amount cannot be determined at all.',
+      'For investment research requests, prefer short bullet sections or a compact markdown table with columns 역할, 후보, 비중 초안, 근거, 주요 위험, 추가 확인 자료. Keep each cell short enough for mobile. If current data is missing, write 확인 필요 instead of inventing it.',
       'Do not give buy/sell/hold instructions. Frame securities as research candidates or reference allocations, not personalized recommendations.',
       'Do not invent current prices, recent earnings, valuation multiples, news, rankings, reports, exact quotes, tax rules, or legal details. Use only source-backed data provided by the user; otherwise say live/source verification is needed.',
     )
@@ -2315,6 +2852,33 @@ function sanitizeReply(
 
   const sanitizedReply = sentences.join(' ').trim()
   return sanitizedReply || '저장된 정보를 반영해 다음 단계로 이어갈게요.'
+}
+
+function sanitizeMonthlySpendingProposal(
+  proposal: MonthlySpendingProposal | undefined,
+): MonthlySpendingProposal | undefined {
+  if (!proposal || hasReadableMonthlySpendingAmount(proposal)) {
+    return proposal
+  }
+  return undefined
+}
+
+function hasReadableMonthlySpendingAmount(
+  proposal: MonthlySpendingProposal,
+): boolean {
+  const amountFields = [
+    proposal.totalExpense,
+    proposal.essentialExpense,
+    proposal.flexibleExpense,
+  ]
+  const hasPositiveAmount = amountFields.some(
+    (amount) => amount !== null && amount > 0,
+  )
+
+  return (
+    hasPositiveAmount ||
+    proposal.categoryBreakdown.some((item) => item.amount > 0)
+  )
 }
 
 function getCompletedProfileTerms(
