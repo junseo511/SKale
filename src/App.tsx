@@ -190,7 +190,7 @@ function App(): ReactNode {
   ] = useState<NextActionRecommendation[]>([])
   const [isReplying, setIsReplying] = useState(false)
   const [replyWaitNotice, setReplyWaitNotice] = useState(
-    '내용을 정리하고 있어요. 최대 30초까지 걸릴 수 있어요.',
+    '내용을 정리하고 있어요. 최대 1분 까지 걸릴 수 있어요.',
   )
   const [errorMessage, setErrorMessage] = useState('')
   const [isSalaryCalculatorOpen, setIsSalaryCalculatorOpen] =
@@ -2947,15 +2947,15 @@ function createReplyWaitNotice(
   attachmentCount: number,
 ): string {
   if (attachmentCount > 0) {
-    return `사용내역 이미지 ${attachmentCount}장을 읽고 있어요. 최대 60초까지 걸릴 수 있어요.`
+    return `사용내역 이미지 ${attachmentCount}장을 읽고 있어요. 최대 1분 까지 걸릴 수 있어요.`
   }
 
   const intent = getActionIntent(message)
   if (intent === 'investment_research') {
-    return '투자 후보를 비교해 정리하고 있어요. 최대 45초까지 걸릴 수 있어요.'
+    return '투자 후보를 비교해 정리하고 있어요. 최대 1분 까지 걸릴 수 있어요.'
   }
   if (intent === 'spending_distribution') {
-    return '사용내역을 분류하고 있어요. 최대 45초까지 걸릴 수 있어요.'
+    return '사용내역을 분류하고 있어요. 최대 1분 까지 걸릴 수 있어요.'
   }
   if (
     intent === 'detail_plan' ||
@@ -2963,10 +2963,10 @@ function createReplyWaitNotice(
     intent === 'detail_adjust' ||
     intent === 'preference_adjust'
   ) {
-    return '월급 조정안을 정리하고 있어요. 최대 30초까지 걸릴 수 있어요.'
+    return '월급 조정안을 정리하고 있어요. 최대 1분 까지 걸릴 수 있어요.'
   }
 
-  return '내용을 정리하고 있어요. 최대 20초까지 걸릴 수 있어요.'
+  return '내용을 정리하고 있어요. 최대 1분 까지 걸릴 수 있어요.'
 }
 
 function resolveRecommendedAction(
