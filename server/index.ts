@@ -1863,7 +1863,7 @@ function createContextualNextActionRecommendation(
               '월급 기준은 잡혔으니 사용내역, 고정비, 목표 중 하나를 이어서 반영합니다.',
             primaryLabel: '사용내역 반영',
             draft:
-              '이미 입력한 월급 기준으로 사용내역과 고정비를 반영해 월급 계획을 이어서 정리해 주세요.',
+              '입력했던 월급 기준으로 사용내역과 고정비를 반영해 월급 계획을 이어서 정리해 주세요.',
           }
     default:
       return null
