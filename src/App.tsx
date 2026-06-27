@@ -1585,12 +1585,12 @@ function ProfileCard({
         <strong>
           {profile.monthlySalary === null
             ? '월급만 알려주세요'
-            : '기본 금액을 채워뒀어요'}
+            : '추천 금액을 채워뒀어요'}
         </strong>
         <p>
           {profile.monthlySalary === null
             ? '월급을 입력하면 쓸 돈, 모을 돈, 투자할 돈을 먼저 나눠볼 수 있어요.'
-            : '생활비, 목표, 투자 조건은 여기서 바로 고칠 수 있어요.'}
+            : '생활비, 목표, 투자 조건은 여기서 바로 수정할 수 있어요.'}
         </p>
       </div>
       <div className="profile-check-list">
@@ -1635,7 +1635,7 @@ function ProfileCard({
         <div className="profile-custom-uses">
           <div>
             <span>매달 먼저 나눠둘 사용처</span>
-            <small>필요하면 위 항목에서 바로 고칠 수 있어요.</small>
+            <small>필요하면 위 항목에서 바로 수정할 수 있어요.</small>
           </div>
           <ul>
             {profile.customUses.map((use) => (
@@ -2199,7 +2199,7 @@ function NetSalaryCalculator({
         <div className="calculator-footer">
           <p>
             {inputMethod === 'direct'
-              ? '나중에 월급이 바뀌면 이 화면에서 다시 고칠 수 있어요.'
+              ? '나중에 월급이 바뀌면 이 화면에서 다시 수정할 수 있어요.'
               : '예상 금액이에요. 실제 급여명세서와 다를 수 있어요.'}
           </p>
           <button
