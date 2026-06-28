@@ -197,11 +197,11 @@ function App(): ReactNode {
     useState(false)
   const [editingProfileField, setEditingProfileField] =
     useState<EditableProfileField | null>(null)
-  const [isStarterOpen, setIsStarterOpen] = useState(true)
   const abortControllerReference = useRef<AbortController | null>(null)
   const scrollPositionBeforeModalReference = useRef(0)
   const messageListReference = useRef<HTMLDivElement | null>(null)
   const composerTextAreaReference = useRef<HTMLTextAreaElement | null>(null)
+  const responseFocusReference = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     workspaceRepository.save({ messages, profile, monthlySpending })
@@ -215,6 +215,13 @@ function App(): ReactNode {
       return
     }
     requestAnimationFrame(() => {
+      if (!isReplying && responseFocusReference.current) {
+        responseFocusReference.current.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        })
+        return
+      }
       messageList.scrollTo({
         top: messageList.scrollHeight,
         behavior: 'smooth',
@@ -266,7 +273,6 @@ function App(): ReactNode {
     [messages, profile, monthlySpending],
   )
   const nextAction = getNextAction(profile, plan, hasSpendingHistory)
-  const hasUserMessage = messages.some((message) => message.role === 'user')
   const recommendedAction = resolveRecommendedAction(
     latestRecommendedAction,
     nextAction,
@@ -325,12 +331,6 @@ function App(): ReactNode {
     },
   ]
   const stockResearchRequest = usPortfolioPrompt
-
-  useEffect(() => {
-    if (hasUserMessage) {
-      setIsStarterOpen(false)
-    }
-  }, [hasUserMessage])
 
   async function sendMessage(): Promise<void> {
     const normalizedDraft = draft.trim()
@@ -670,14 +670,16 @@ function App(): ReactNode {
               )}
 
               {pendingResponse && (
-                <ProposalCards
-                  response={pendingResponse}
-                  onApplyProfile={applyProfileProposal}
-                  onApplyMonthlySpending={applyMonthlySpendingProposal}
-                  onStartMonthlySpendingReview={
-                    startMonthlySpendingClarification
-                  }
-                />
+                <div ref={responseFocusReference}>
+                  <ProposalCards
+                    response={pendingResponse}
+                    onApplyProfile={applyProfileProposal}
+                    onApplyMonthlySpending={applyMonthlySpendingProposal}
+                    onStartMonthlySpendingReview={
+                      startMonthlySpendingClarification
+                    }
+                  />
+                </div>
               )}
               {shouldShowNextAction && (
                 <NextActionPanel
@@ -701,30 +703,21 @@ function App(): ReactNode {
             </div>
 
             {shouldShowQuickMessages && (
-              <div className={`suggestion-section ${isStarterOpen ? 'open' : 'collapsed'}`}>
-                <button
-                  className="starter-heading"
-                  type="button"
-                  aria-expanded={isStarterOpen}
-                  aria-controls="starter-card-list"
-                  onClick={() => setIsStarterOpen((isOpen) => !isOpen)}
-                >
+              <div className="suggestion-section open">
+                <div className="starter-heading" id="starter-card-heading">
                   <span>이렇게도 질문해 보세요</span>
-                  <small>{isStarterOpen ? '접기' : '펼치기'}</small>
-                  <i aria-hidden="true">
-                    <ChevronRight size={16} />
-                  </i>
-                </button>
+                  <small>추천 문장</small>
+                </div>
                 <div
                   id="starter-card-list"
                   className="starter-content"
-                  aria-hidden={!isStarterOpen}
+                  aria-labelledby="starter-card-heading"
+                  aria-hidden="false"
                 >
                   <div className="quick-message-list" aria-label="시작 카드">
                     <button
                       className="starter-card calculator-quick-button"
                       type="button"
-                      disabled={!isStarterOpen}
                       onClick={openSalaryCalculator}
                     >
                       <span>
@@ -736,7 +729,6 @@ function App(): ReactNode {
                       <button
                         className="starter-card"
                         type="button"
-                        disabled={!isStarterOpen}
                         key={message.prompt}
                         onClick={() => setDraft(message.prompt)}
                       >
@@ -2952,7 +2944,7 @@ function createReplyWaitNotice(
 
   const intent = getActionIntent(message)
   if (intent === 'investment_research') {
-    return '투자 후보를 비교해 정리하고 있어요. 최대 1분 까지 걸릴 수 있어요.'
+    return '투자 후보를 비교해 정리하고 있어요. 최대 45초까지 걸릴 수 있어요.'
   }
   if (intent === 'spending_distribution') {
     return '사용내역을 분류하고 있어요. 최대 1분 까지 걸릴 수 있어요.'
@@ -3396,6 +3388,15 @@ function getActionIntent(message: string): ConversationActionIntent | null {
     return 'preference_adjust'
   }
   if (
+    normalizedMessage.includes('투자') ||
+    normalizedMessage.includes('포트폴리오') ||
+    normalizedMessage.includes('종목') ||
+    normalizedMessage.includes('주식') ||
+    normalizedMessage.includes('ETF')
+  ) {
+    return 'investment_research'
+  }
+  if (
     normalizedMessage.includes('조정안') ||
     normalizedMessage.includes('조정해') ||
     normalizedMessage.includes('보완안') ||
@@ -3448,15 +3449,6 @@ function getActionIntent(message: string): ConversationActionIntent | null {
     normalizedMessage.includes('명세서')
   ) {
     return 'spending_distribution'
-  }
-  if (
-    normalizedMessage.includes('투자') ||
-    normalizedMessage.includes('포트폴리오') ||
-    normalizedMessage.includes('종목') ||
-    normalizedMessage.includes('주식') ||
-    normalizedMessage.includes('ETF')
-  ) {
-    return 'investment_research'
   }
   if (
     normalizedMessage.includes('월실수령액') ||
@@ -3632,8 +3624,8 @@ function createRecommendationPolicy(
   }
   if (stage === 'investment_ready') {
     return {
-      priority: ['세부 사용처 보완', '실제 사용내역과 계획 비교', '비상금·부채 점검', '출처 기반 투자 후보 조사'],
-      avoid: ['이미 확인된 정보를 다시 질문하기'],
+      priority: ['출처 기반 투자 후보 비교', '포트폴리오 비중 조정', '확인할 자료 정리', '전체 월급 계획 확인'],
+      avoid: ['이미 확인된 정보를 다시 질문하기', '투자 요청을 세부 사용처 조정으로 바꾸기', '카드 내역 다시 요청하기'],
     }
   }
   return {

@@ -707,6 +707,13 @@ app.post('/api/payday/chat', async (request, response, next) => {
       return
     }
 
+    const deterministicInvestmentAllocation =
+      createDeterministicInvestmentAllocationResponse(message, profile)
+    if (deterministicInvestmentAllocation) {
+      response.json(deterministicInvestmentAllocation)
+      return
+    }
+
     const deterministicDetailAdjustment = createDeterministicDetailAdjustmentResponse(
       message,
       profile,
@@ -796,6 +803,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
           !(key === 'preferences' && Array.isArray(value) && value.length === 0),
       ),
     ) as PaydayProfilePatch
+    profilePatch = sanitizeProfilePatchScope(profilePatch)
     let visibleMissingData = sanitizeMissingData(result.missingData, profile, profilePatch)
     let visibleAppliedFacts = result.appliedFacts.map(replaceInternalFieldNames)
     let visibleReply = sanitizeReply(
@@ -811,7 +819,7 @@ app.post('/api/payday/chat', async (request, response, next) => {
       profilePatch,
     )
     if (proactiveDetailPlan) {
-      profilePatch = proactiveDetailPlan.profilePatch
+      profilePatch = sanitizeProfilePatchScope(proactiveDetailPlan.profilePatch)
       visibleReply = sanitizeReplyForConversationIntent(
         proactiveDetailPlan.reply,
         message,
@@ -1997,6 +2005,9 @@ function getConversationIntent(message: string): ConversationIntent | null {
   ) {
     return 'preference_adjust'
   }
+  if (isInvestmentResearchRequest(message)) {
+    return 'investment_research'
+  }
   if (
     normalizedMessage.includes('조정안') ||
     normalizedMessage.includes('조정해') ||
@@ -2036,9 +2047,6 @@ function getConversationIntent(message: string): ConversationIntent | null {
   }
   if (isSpendingDataRequest(message)) {
     return 'spending_distribution'
-  }
-  if (isInvestmentResearchRequest(message)) {
-    return 'investment_research'
   }
   if (
     normalizedMessage.includes('월실수령액') ||
@@ -2600,6 +2608,88 @@ function createDeterministicDetailAdjustmentResponse(
   }
 }
 
+function createDeterministicInvestmentAllocationResponse(
+  message: string,
+  profile: FinancialProfile,
+): {
+  reply: string
+  profilePatch: PaydayProfilePatch
+  monthlySpendingProposal: undefined
+  missingData: string[]
+  appliedFacts: string[]
+  nextActionRecommendation: NextActionRecommendation
+} | null {
+  const amount = extractInvestmentShiftAmount(message)
+  if (amount <= 0) {
+    return null
+  }
+
+  const currentFlexibleSpending =
+    profile.flexibleSpending ??
+    (profile.monthlySalary !== null
+      ? Math.round(profile.monthlySalary * 0.1)
+      : null)
+  if (currentFlexibleSpending === null) {
+    return {
+      reply:
+        '투자금으로 옮길 금액은 이해했어요. 다만 여유 생활비 기준이 아직 없어 얼마를 줄일지 확정할 수 없습니다. 먼저 월 실수령액이나 여유 생활비 기준을 알려주시면 바로 반영해 드릴게요.',
+      profilePatch: {},
+      monthlySpendingProposal: undefined,
+      missingData: ['월 실수령액 또는 여유 생활비'],
+      appliedFacts: [],
+      nextActionRecommendation: {
+        title: '월급 기준을 먼저 정할까요',
+        description:
+          '투자금은 월급 배분에서 남는 금액으로 계산되므로 기준 금액이 먼저 필요해요.',
+        primaryLabel: '월급 입력',
+        draft: '월 실수령액과 여유 생활비 기준을 먼저 반영해 주세요.',
+      },
+    }
+  }
+
+  const nextFlexibleSpending = Math.max(currentFlexibleSpending - amount, 0)
+  const shiftedAmount = currentFlexibleSpending - nextFlexibleSpending
+  return {
+    reply: [
+      `여유 생활비에서 ${formatWonForReply(shiftedAmount)}을 줄여 투자금으로 남기도록 조정했어요.`,
+      `여유 생활비는 ${formatWonForReply(currentFlexibleSpending)}에서 ${formatWonForReply(nextFlexibleSpending)}으로 바뀝니다.`,
+      '이 금액은 지난 사용내역이나 목표 자금이 아니라, 이번 월급 배분에서 장기 투자 가능 금액으로 계산됩니다. 투자 후보를 더 비교해 보시겠어요?',
+    ].join('\n\n'),
+    profilePatch: { flexibleSpending: nextFlexibleSpending },
+    monthlySpendingProposal: undefined,
+    missingData: [],
+    appliedFacts: [`여유 생활비 ${formatWonForReply(shiftedAmount)} 투자 여력으로 이동`],
+    nextActionRecommendation: {
+      title: '투자 후보를 비교할까요',
+      description:
+        '조정된 투자 가능 금액을 기준으로 ETF와 개별 후보를 역할별로 비교합니다.',
+      primaryLabel: '후보 비교',
+      draft:
+        '조정된 이번 달 투자 가능 금액을 기준으로 ETF와 개별 종목 후보를 역할별로 비교해 주세요. 현재가와 재무 데이터는 출처가 있을 때만 사용해 주세요.',
+    },
+  }
+}
+
+function extractInvestmentShiftAmount(message: string): number {
+  const normalizedMessage = normalizeKoreanText(message)
+  if (
+    !normalizedMessage.includes('투자') ||
+    !(
+      normalizedMessage.includes('여유생활비') ||
+      normalizedMessage.includes('생활비에서') ||
+      normalizedMessage.includes('줄여')
+    )
+  ) {
+    return 0
+  }
+
+  const amountMatch = message.match(/([\d,]+(?:\.\d+)?)\s*(만원|만 원|원)/)
+  if (!amountMatch) {
+    return 0
+  }
+  return parseKoreanMoneyAmount(amountMatch[1], amountMatch[2])
+}
+
 function createDefaultNextActionRecommendation(profile: FinancialProfile): {
   title: string
   description: string
@@ -2792,7 +2882,9 @@ function adjustCustomUsesToActualSpending(
 ): FinancialProfile['customUses'] {
   return [
     ...adjustCustomUseBucket(customUses, 'essential', actualEssential),
-    ...customUses.filter((use) => use.bucket === 'goal'),
+    ...customUses.filter(
+      (use) => use.bucket === 'goal' && !isInvestmentLikeCustomUse(use.name),
+    ),
     ...adjustCustomUseBucket(customUses, 'flexible', actualFlexible),
   ]
 }
@@ -2827,8 +2919,18 @@ function adjustCustomUseBucket(
   targetAmount: number,
 ): FinancialProfile['customUses'] {
   const bucketUses = customUses.filter((use) => use.bucket === bucket)
-  if (bucketUses.length === 0 || targetAmount <= 0) {
+  if (targetAmount <= 0) {
     return bucketUses
+  }
+  if (bucketUses.length === 0) {
+    return [
+      {
+        name: bucket === 'essential' ? '필수 생활비 조정분' : '여유 생활비 조정분',
+        amount: targetAmount,
+        bucket,
+        note: '분석한 사용내역을 기준으로 새로 잡은 금액이에요.',
+      },
+    ]
   }
 
   const currentTotal = bucketUses.reduce((total, use) => total + use.amount, 0)
@@ -2875,6 +2977,10 @@ function createAdjustmentLine(
   previousAmount: number,
   adjustedAmount: number,
 ): string {
+  if (previousAmount <= 0 && adjustedAmount > 0) {
+    return `- ${label}: ${adjustedAmount.toLocaleString()}원으로 새로 반영`
+  }
+
   const difference = adjustedAmount - previousAmount
   const suffix =
     difference > 0
@@ -3032,22 +3138,136 @@ function sanitizeReplyForConversationIntent(reply: string, message: string): str
         /\n?(이제|다음으로)?[^\n]*(비상금|안전망|고정비|고정\s*지출|고정적으로\s*지출|지출\s*내역|카드값)[^\n]*(점검|확인|확인해\s*볼까요|보시겠어요)[^\n]*/g,
         '',
       )
+    cleanedReply = ensureInvestmentReplyHasComparison(cleanedReply)
   }
 
-  return cleanedReply
+  return ensureConversationalFollowUp(cleanedReply)
     .replace(/\s*(\|[ \t]*역할[^\n]*\|)/, '\n\n$1')
     .replace(/([.?!。！？])\s+(\|[^\n]+\|)/g, '$1\n\n$2')
     .replace(/[ \t]+\n/g, '\n')
     .trim()
 }
 
+function ensureInvestmentReplyHasComparison(reply: string): string {
+  if (
+    reply.includes('| 역할 |') ||
+    reply.includes('| 후보 |') ||
+    reply.includes('추가 확인 자료 |') ||
+    /^\s*\|[^\n|]*역할[^\n|]*\|[^\n|]*후보[^\n|]*\|/m.test(reply) ||
+    reply.includes('역할\n')
+  ) {
+    return reply
+  }
+
+  return [
+    reply,
+    '| 역할 | 후보 | 비중 초안 | 근거 | 주요 위험 | 추가 확인 자료 |',
+    '| --- | --- | --- | --- | --- | --- |',
+    '| 시장 중심 | S&P 500 ETF | 50% | 미국 대형주 분산 | 시장 전반 하락 | 실시간 시세·운용보수 확인 필요 |',
+    '| 성장 보조 | 나스닥 100 ETF | 30% | 기술 성장 노출 | 변동성·고평가 | 구성 종목·금리 민감도 확인 필요 |',
+    '| 안정 보완 | 배당성장 ETF | 20% | 배당과 방어 역할 | 성장성 제한 | 배당수익률·배당성장률 확인 필요 |',
+  ].join('\n')
+}
+
+function ensureConversationalFollowUp(reply: string): string {
+  const trimmedReply = reply.trim()
+  if (!trimmedReply || /[?？]\s*$/.test(trimmedReply)) {
+    return trimmedReply
+  }
+  return `${trimmedReply}\n\n더 궁금하신 점이나 바꾸고 싶은 기준이 있으실까요?`
+}
+
 function sanitizeMonthlySpendingProposal(
   proposal: MonthlySpendingProposal | undefined,
 ): MonthlySpendingProposal | undefined {
-  if (!proposal || hasReadableMonthlySpendingAmount(proposal)) {
+  if (!proposal) {
     return proposal
   }
-  return undefined
+  const ordinaryCategoryBreakdown = proposal.categoryBreakdown.filter(
+    (item) => !isNonSpendingCategory(item.category),
+  )
+  const removedOnlyCategories =
+    proposal.categoryBreakdown.length > 0 &&
+    ordinaryCategoryBreakdown.length === 0
+  const sanitizedProposal = {
+    ...proposal,
+    categoryBreakdown: ordinaryCategoryBreakdown,
+    notableCategories: proposal.notableCategories.filter(
+      (category) => !isNonSpendingCategory(category),
+    ),
+  }
+
+  if (
+    removedOnlyCategories ||
+    !hasReadableMonthlySpendingAmount(sanitizedProposal)
+  ) {
+    return undefined
+  }
+  return sanitizedProposal
+}
+
+function isNonSpendingCategory(category: string): boolean {
+  const normalizedCategory = normalizeKoreanText(category)
+  return (
+    normalizedCategory.includes('투자') ||
+    normalizedCategory.includes('주식') ||
+    normalizedCategory.includes('ETF') ||
+    normalizedCategory.includes('저축') ||
+    normalizedCategory.includes('이체') ||
+    normalizedCategory.includes('환급') ||
+    normalizedCategory.includes('소득')
+  )
+}
+
+function sanitizeProfilePatchScope(profilePatch: PaydayProfilePatch): PaydayProfilePatch {
+  const proposedCustomUses = profilePatch.customUses
+  if (
+    !Array.isArray(proposedCustomUses) ||
+    !proposedCustomUses.every(isCustomSalaryUsePatch)
+  ) {
+    return profilePatch
+  }
+
+  const customUses = proposedCustomUses.filter(
+    (use) => !isInvestmentLikeCustomUse(use.name),
+  )
+  if (customUses.length === proposedCustomUses.length) {
+    return profilePatch
+  }
+  if (customUses.length === 0) {
+    const restProfilePatch = { ...profilePatch }
+    delete restProfilePatch.customUses
+    return restProfilePatch
+  }
+  return { ...profilePatch, customUses }
+}
+
+function isCustomSalaryUsePatch(
+  value: unknown,
+): value is FinancialProfile['customUses'][number] {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    'name' in value &&
+    typeof value.name === 'string' &&
+    'amount' in value &&
+    typeof value.amount === 'number' &&
+    'bucket' in value &&
+    ['essential', 'goal', 'flexible'].includes(String(value.bucket)) &&
+    'note' in value &&
+    typeof value.note === 'string'
+  )
+}
+
+function isInvestmentLikeCustomUse(name: string): boolean {
+  const normalizedName = normalizeKoreanText(name)
+  return (
+    normalizedName.includes('투자') ||
+    normalizedName.includes('주식') ||
+    normalizedName.includes('ETF') ||
+    normalizedName.includes('종목')
+  )
 }
 
 function hasReadableMonthlySpendingAmount(
