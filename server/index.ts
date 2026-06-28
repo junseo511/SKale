@@ -231,7 +231,7 @@ const paydayConversationModelResponseValidationSchema = z
           })
           .strict(),
       )
-      .max(4)
+      .max(3)
       .optional(),
   })
   .strict()
@@ -584,7 +584,7 @@ const paydayConversationResponseSchema = {
     },
     secondaryActionRecommendations: {
       type: 'array',
-      maxItems: 4,
+      maxItems: 3,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -1455,6 +1455,14 @@ function createQuickPaydayConversationResponse({
     )
   }
 
+  if (isCurrentMonthQuestionIntent(intentText)) {
+    const { year, month } = getCurrentDateParts()
+    return createStaticPaydayResponse(
+      `현재는 ${year}년 ${month}월입니다.`,
+      profile,
+    )
+  }
+
   if (isAcknowledgementIntent(intentText)) {
     const nextAction = createDefaultNextActionRecommendation(profile)
     return createStaticPaydayResponse(
@@ -1620,6 +1628,20 @@ function normalizeQuickIntentText(message: string): string {
     .replace(/[?？!！.,。~"'`]/g, '')
 }
 
+function getCurrentDateParts(): { year: number; month: number; day: number } {
+  const currentDate = new Date()
+  return {
+    year: currentDate.getFullYear(),
+    month: currentDate.getMonth() + 1,
+    day: currentDate.getDate(),
+  }
+}
+
+function formatCurrentDateForPrompt(): string {
+  const { year, month, day } = getCurrentDateParts()
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
 function hasQuickActionableFinancialInput(message: string): boolean {
   return (
     /\d[\d,.\s]*(원|만원|만 원|억|천만)/.test(message) ||
@@ -1648,6 +1670,17 @@ function isCapabilityQuestionIntent(intentText: string): boolean {
     intentText.includes('사용법') ||
     intentText.includes('도움말') ||
     intentText === 'help'
+  )
+}
+
+function isCurrentMonthQuestionIntent(intentText: string): boolean {
+  return (
+    (intentText.includes('이번달') || intentText.includes('현재')) &&
+    (intentText.includes('몇월') ||
+      intentText.includes('몇월이야') ||
+      intentText.includes('무슨달') ||
+      intentText.includes('몇년도') ||
+      intentText.includes('날짜'))
   )
 }
 
@@ -2160,6 +2193,7 @@ function buildPaydayConversationPrompt({
   targetMonth: string | undefined
 }): string {
   return [
+    `Current server date:\n${formatCurrentDateForPrompt()}`,
     `Application flow context:\n${JSON.stringify(appContext ?? null)}`,
     `Confirmed profile:\n${JSON.stringify(compactFinancialProfile(profile))}`,
     `Confirmed spending summaries:\n${JSON.stringify(compactMonthlySpending(monthlySpending))}`,
@@ -2201,7 +2235,7 @@ function createBasePaydayInstructions(): string[] {
     'Before returning any table or numeric explanation, cross-check every percentage, subtotal, and total against the provided context. If the numbers cannot be verified, say 확인 필요 instead of inventing a precise amount.',
     'Explain reasoning with slightly more detail than a one-line answer: include the basis, the effect on the payday plan, and one practical next step. Keep it compact.',
     'Always return nextActionRecommendation as a concrete Korean message the user can send next.',
-    'When useful, return secondaryActionRecommendations with 3 to 4 distinct next actions. Mix different useful directions such as spending trend analysis, actual spending feedback, plan adjustment, safety checks, and investment follow-up when appropriate. Do not repeat the primary action, completed actions, or requests for data already provided.',
+    'When useful, return secondaryActionRecommendations with up to 3 distinct next actions. Mix different useful directions such as spending trend analysis, actual spending feedback, plan adjustment, safety checks, and investment follow-up when appropriate. Do not repeat the primary action, completed actions, or requests for data already provided.',
     'If the message is unrelated or unintelligible, answer with a gentle 잘 모르겠어요-style scope guide and return no proposals.',
   ]
 }

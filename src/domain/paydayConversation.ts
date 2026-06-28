@@ -201,7 +201,7 @@ export const paydayConversationResponseSchema = z
           })
           .strict(),
       )
-      .max(4)
+      .max(3)
       .optional(),
   })
   .strict()

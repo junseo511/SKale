@@ -1191,7 +1191,7 @@ function createSecondaryNextActions({
   return uniqueSecondaryActionMessages([
     ...aiSecondaryActions,
     ...localSecondaryActions,
-  ]).slice(0, 4)
+  ]).slice(0, 3)
 }
 
 function uniqueNextActions(
