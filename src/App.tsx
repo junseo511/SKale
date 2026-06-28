@@ -298,8 +298,8 @@ function App(): ReactNode {
     : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해 주세요.'
   const usPortfolioPrompt =
     plan && plan.availableInvestmentAmount > 0
-      ? `${formatWon(plan.availableInvestmentAmount)}으로 미국 주식을 위주로 투자 포트폴리오를 구성해 주세요. ETF와 개별 종목 후보는 역할별로 나누고, 현재가와 재무 데이터는 출처가 있을 때만 사용해 주세요.`
-      : '미국 주식을 위주로 투자 포트폴리오를 구성해 주세요. 먼저 내 상황에서 투자 가능한 금액과 투자 성향을 확인한 뒤, ETF와 개별 종목 후보를 역할별로 나눠 주세요.'
+      ? `${formatWon(plan.availableInvestmentAmount)}으로 미국 주식을 위주로 투자 포트폴리오를 구성해 주세요. ETF와 개별 종목 후보는 실제 티커로 적고, 역할별로 나눠 주세요. 현재가와 재무 데이터는 출처가 있을 때만 사용하고, 출처가 없으면 확인 필요로 표시해 주세요.`
+      : '미국 주식을 위주로 투자 포트폴리오를 구성해 주세요. 먼저 내 상황에서 투자 가능한 금액과 투자 성향을 확인한 뒤, ETF와 개별 종목 후보를 실제 티커 중심으로 역할별로 나눠 주세요.'
   const quickMessages = [
     {
       label: effectiveTargetMonth
@@ -857,6 +857,16 @@ function App(): ReactNode {
           </section>
 
           <aside className="context-panel">
+            <PlanSnapshotCard
+              plan={plan}
+              stockResearchRequest={stockResearchRequest}
+              onUseDraft={(message) => {
+                setDraft(message)
+                requestAnimationFrame(() =>
+                  composerTextAreaReference.current?.focus(),
+                )
+              }}
+            />
             <ProfileCard
               profile={profile}
               completed={completedProfileFields}
@@ -2306,6 +2316,83 @@ function CountField({
   )
 }
 
+function PlanSnapshotCard({
+  plan,
+  stockResearchRequest,
+  onUseDraft,
+}: {
+  plan: PaydayPlan | null
+  stockResearchRequest: string
+  onUseDraft: (message: string) => void
+}): ReactNode {
+  const visibleAllocations =
+    plan?.allocations
+      .filter((allocation) => allocation.amount > 0)
+      .slice(0, 5) ?? []
+
+  return (
+    <section className="context-card plan-snapshot-card" aria-label="이번 월급 배분 요약">
+      <div className="context-heading">
+        <div>
+          <span>PAYDAY PLAN</span>
+          <h2>입력한 내용으로 월급을 나눠드려요</h2>
+        </div>
+        {plan && <strong>{formatWon(plan.availableInvestmentAmount)}</strong>}
+      </div>
+
+      {plan ? (
+        <>
+          <div className="plan-snapshot-hero">
+            <span>{plan.safetyStatus}</span>
+            <strong>{plan.headline}</strong>
+            <small>자동 계산된 투자 가능 금액 {formatWon(plan.availableInvestmentAmount)}</small>
+          </div>
+          <div className="plan-snapshot-list">
+            {visibleAllocations.map((allocation) => (
+              <div key={allocation.role}>
+                <span>{allocation.label}</span>
+                <strong>{formatWon(allocation.amount)}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="plan-snapshot-actions">
+            <button
+              type="button"
+              onClick={() =>
+                document.getElementById('payday-plan')?.scrollIntoView({
+                  behavior: 'smooth',
+                  block: 'start',
+                })
+              }
+            >
+              상세 보기
+            </button>
+            <button
+              type="button"
+              onClick={() => onUseDraft(createPlanDetailDraft(plan))}
+            >
+              세부 계획
+            </button>
+            {plan.availableInvestmentAmount > 0 && (
+              <button
+                type="button"
+                onClick={() => onUseDraft(stockResearchRequest)}
+              >
+                후보 보기
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="plan-snapshot-empty">
+          <strong>월급 기준을 먼저 잡으면 바로 계산해요.</strong>
+          <p>실수령액만 있어도 생활비, 비상금, 목표, 투자금 초안을 볼 수 있어요.</p>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function PlanSection({
   plan,
   stockResearchRequest,
@@ -2898,7 +2985,7 @@ function getNextAction(
           '월급에서 쓸 돈을 먼저 분리했으니, 남은 투자 가능 금액으로 후보를 비교해볼 수 있어요.',
         primaryLabel: '투자 후보 보기',
         draft:
-          '이번 달 투자 가능 금액을 기준으로 ETF와 종목 후보를 비교해 주세요. 현재가와 재무 데이터는 출처가 있을 때만 사용해 주세요.',
+          '이번 달 투자 가능 금액을 기준으로 ETF와 개별 종목 후보를 실제 티커로 비교해 주세요. 현재가와 재무 데이터는 출처가 있을 때만 사용하고, 출처가 없으면 확인 필요로 표시해 주세요.',
       }
     }
 
@@ -3111,7 +3198,7 @@ function createContextualNextAction(
         '방금 요청한 포트폴리오 맥락에서 ETF와 후보군을 더 좁혀 비교할 수 있어요.',
       primaryLabel: '후보 더 비교',
       draft:
-        '방금 포트폴리오 초안을 기준으로 ETF와 개별 종목 후보를 더 좁혀서 장단점과 확인할 자료를 비교해 주세요.',
+        '방금 포트폴리오 초안을 기준으로 ETF와 개별 종목 후보를 실제 티커 단위로 더 좁혀서 장단점과 확인할 자료를 비교해 주세요.',
     }
   }
 
