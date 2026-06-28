@@ -2245,7 +2245,7 @@ function createBasePaydayInstructions(): string[] {
     'Before returning any table or numeric explanation, cross-check every percentage, subtotal, and total against the provided context. If the numbers cannot be verified, say 확인 필요 instead of inventing a precise amount.',
     'Explain reasoning with slightly more detail than a one-line answer: include the basis, the effect on the payday plan, and one practical next step. Keep it compact.',
     'Always return nextActionRecommendation as a concrete Korean message the user can send next.',
-    'When useful, return secondaryActionRecommendations with up to 3 distinct next actions. Mix different useful directions such as spending trend analysis, actual spending feedback, plan adjustment, safety checks, and investment follow-up when appropriate. Do not repeat the primary action, completed actions, or requests for data already provided.',
+    'Return secondaryActionRecommendations with exactly 3 distinct next actions whenever possible. Mix different useful directions such as spending trend analysis, actual spending feedback, plan adjustment, safety checks, and investment follow-up when appropriate. Do not repeat the primary action, completed actions, or requests for data already provided.',
     'If the message is unrelated or unintelligible, answer with a gentle 잘 모르겠어요-style scope guide and return no proposals.',
   ]
 }

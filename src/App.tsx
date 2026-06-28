@@ -140,6 +140,7 @@ interface SpendingTrendPoint {
 const MAX_IMAGE_COUNT = 4
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024
 const PROFILE_FIELD_COUNT = 1
+const SECONDARY_NEXT_ACTION_COUNT = 3
 const CHART_COLORS = [
   '#ea002c',
   '#ff7a00',
@@ -190,7 +191,7 @@ function App(): ReactNode {
   ] = useState<NextActionRecommendation[]>([])
   const [isReplying, setIsReplying] = useState(false)
   const [replyWaitNotice, setReplyWaitNotice] = useState(
-    '내용을 정리하고 있어요. 최대 1분 까지 걸릴 수 있어요.',
+    '내용을 정리하고 있어요. 최대 1분 까지 소요될 수 있어요.',
   )
   const [errorMessage, setErrorMessage] = useState('')
   const [isSalaryCalculatorOpen, setIsSalaryCalculatorOpen] =
@@ -1187,11 +1188,113 @@ function createSecondaryNextActions({
     primaryText,
     completedActionIntents,
   )
-
-  return uniqueSecondaryActionMessages([
+  const preferredSecondaryActions = uniqueSecondaryActionMessages([
     ...aiSecondaryActions,
     ...localSecondaryActions,
-  ]).slice(0, 3)
+  ])
+
+  return fillSecondaryNextActions(
+    preferredSecondaryActions,
+    createFallbackSecondaryNextActions(hasSpendingHistory),
+    primaryDraft,
+    primaryText,
+  )
+}
+
+function createFallbackSecondaryNextActions(
+  hasSpendingHistory: boolean,
+): SecondaryNextAction[] {
+  const spendingFallback: SecondaryNextAction = hasSpendingHistory
+    ? {
+        label: '소비 추이',
+        message:
+          '저장된 사용내역을 기준으로 소비 추이와 다음에 확인하면 좋은 지점을 추천해 주세요.',
+        icon: <CalendarDays size={15} />,
+      }
+    : {
+        label: '소비 피드백',
+        message:
+          '내 월급 계획에서 소비 피드백을 받으려면 어떤 사용내역을 보내면 좋을지 추천해 주세요.',
+        icon: <CalendarDays size={15} />,
+      }
+
+  return [
+    {
+      label: '다음 추천',
+      message:
+        '지금까지 입력한 월급 계획과 대화 내용을 기준으로 가장 도움이 되는 다음 행동을 추천해 주세요.',
+      icon: <Sparkles size={15} />,
+    },
+    {
+      label: '계획 개선',
+      message:
+        '현재 월급 계획에서 더 개선할 수 있는 부분과 바로 실행할 다음 행동을 추천해 주세요.',
+      icon: <WalletCards size={15} />,
+    },
+    spendingFallback,
+  ]
+}
+
+function fillSecondaryNextActions(
+  preferredActions: SecondaryNextAction[],
+  fallbackActions: SecondaryNextAction[],
+  excludedMessage: string | undefined,
+  primaryText: string,
+): SecondaryNextAction[] {
+  const filledActions: SecondaryNextAction[] = []
+  const seenMessages = new Set<string>()
+
+  for (const action of [...preferredActions, ...fallbackActions]) {
+    if (
+      filledActions.length >= SECONDARY_NEXT_ACTION_COUNT ||
+      action.message === excludedMessage ||
+      seenMessages.has(action.message) ||
+      isSimilarNextAction(action, primaryText)
+    ) {
+      continue
+    }
+
+    filledActions.push(action)
+    seenMessages.add(action.message)
+  }
+
+  for (const action of createLastResortSecondaryNextActions()) {
+    if (
+      filledActions.length >= SECONDARY_NEXT_ACTION_COUNT ||
+      action.message === excludedMessage ||
+      seenMessages.has(action.message)
+    ) {
+      continue
+    }
+
+    filledActions.push(action)
+    seenMessages.add(action.message)
+  }
+
+  return filledActions
+}
+
+function createLastResortSecondaryNextActions(): SecondaryNextAction[] {
+  return [
+    {
+      label: '추천 받기',
+      message:
+        '현재 대화 흐름에서 사용자가 바로 실행할 수 있는 다음 행동을 하나 추천해 주세요.',
+      icon: <Sparkles size={15} />,
+    },
+    {
+      label: '우선순위',
+      message:
+        '지금 월급 계획에서 먼저 확인해야 할 우선순위를 한 가지로 좁혀 주세요.',
+      icon: <PiggyBank size={15} />,
+    },
+    {
+      label: '질문 찾기',
+      message:
+        '현재 계획을 더 정확히 만들기 위해 내가 다음으로 물어보면 좋은 질문을 추천해 주세요.',
+      icon: <MessageCircleMore size={15} />,
+    },
+  ]
 }
 
 function uniqueNextActions(
@@ -3072,15 +3175,15 @@ function createReplyWaitNotice(
   attachmentCount: number,
 ): string {
   if (attachmentCount > 0) {
-    return `사용내역 이미지 ${attachmentCount}장을 읽고 있어요. 최대 1분 까지 걸릴 수 있어요.`
+    return `사용내역 이미지 ${attachmentCount}장을 읽고 있어요. 최대 1분 까지 소요될 수 있어요.`
   }
 
   const intent = getActionIntent(message)
   if (intent === 'investment_research') {
-    return '투자 후보를 비교해 정리하고 있어요. 최대 1분 까지 걸릴 수 있어요.'
+    return '투자 후보를 비교해 정리하고 있어요. 최대 1분 까지 소요될 수 있어요.'
   }
   if (intent === 'spending_distribution') {
-    return '사용내역을 분류하고 있어요. 최대 1분 까지 걸릴 수 있어요.'
+    return '사용내역을 분류하고 있어요. 최대 1분 까지 소요될 수 있어요.'
   }
   if (
     intent === 'detail_plan' ||
@@ -3088,10 +3191,10 @@ function createReplyWaitNotice(
     intent === 'detail_adjust' ||
     intent === 'preference_adjust'
   ) {
-    return '월급 조정안을 정리하고 있어요. 최대 1분 까지 걸릴 수 있어요.'
+    return '월급 조정안을 정리하고 있어요. 최대 1분 까지 소요될 수 있어요.'
   }
 
-  return '내용을 정리하고 있어요. 최대 1분 까지 걸릴 수 있어요.'
+  return '내용을 정리하고 있어요. 최대 1분 까지 소요될 수 있어요.'
 }
 
 function resolveRecommendedAction(
