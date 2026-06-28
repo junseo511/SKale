@@ -1421,7 +1421,7 @@ function isSafetyPriorityRequest(message: string): boolean {
 }
 
 function isInvestmentResearchRequest(message: string): boolean {
-  return /투자|종목|주식|ETF|포트폴리오|후보|시장|현재가|실적|밸류에이션/.test(message)
+  return /투자|종목|주식|ETF|포트폴리오|후보|시장|현재가|실적|밸류에이션|매수|운용보수|구성\s*종목|6\s*:\s*4/.test(message)
 }
 
 function createQuickPaydayConversationResponse({
@@ -1732,6 +1732,23 @@ function createFallbackPaydayResponse(message: string): {
   }
 
   if (hasInvestmentRequest) {
+    if (isInvestmentExecutionPlanningRequest(message)) {
+      return {
+        reply: createFallbackInvestmentExecutionReply(message),
+        profilePatch: {},
+        monthlySpendingProposal: undefined,
+        missingData: [],
+        appliedFacts: [],
+        nextActionRecommendation: {
+          title: '투자 실행 기준을 점검할까요',
+          description:
+            '확정한 비중을 기준으로 매수 단위, 환전, 점검 주기를 정리합니다.',
+          primaryLabel: '실행 기준 점검',
+          draft:
+            '확정한 투자 비중을 기준으로 매수 단위, 환전 기준, 월별 점검 주기를 간단히 정리해 주세요.',
+        },
+      }
+    }
     return {
       reply: createFallbackInvestmentResearchReply(),
       profilePatch: {},
@@ -1763,6 +1780,40 @@ function createFallbackPaydayResponse(message: string): {
       draft: '지금까지 저장된 정보를 기준으로 다음에 조정하면 좋은 월급 계획을 제안해 주세요.',
     },
   }
+}
+
+function createFallbackInvestmentExecutionReply(message: string): string {
+  const amount = extractFirstMoneyAmount(message)
+  const amountLabel =
+    amount > 0 ? `매달 ${formatWonForReply(amount)}` : '매달 투자금'
+  const rows: Array<[string, string, number]> = [
+    ['시장 중심 ETF', 'VOO', 40],
+    ['배당/방어 ETF', 'SCHD', 20],
+    ['성장 ETF', 'QQQM', 30],
+    ['개별 성장 후보', 'MSFT', 10],
+  ]
+
+  return [
+    `확정한 6:4 비중을 기준으로 ${amountLabel}을 나누는 실행 표입니다. 현재가와 최소 주문 가능 금액은 증권사에서 확인이 필요합니다.`,
+    '| 역할 | 후보(티커) | 비중 | 금액 |',
+    '| --- | --- | --- | --- |',
+    ...rows.map(([role, ticker, percentage]) => {
+      const rowAmount =
+        amount > 0
+          ? formatWonForReply(Math.round((amount * percentage) / 100))
+          : '확인 필요'
+      return `| ${role} | ${ticker} | ${percentage}% | ${rowAmount} |`
+    }),
+    `| 합계 | - | 100% | ${amount > 0 ? formatWonForReply(amount) : '확인 필요'} |`,
+  ].join('\n')
+}
+
+function extractFirstMoneyAmount(message: string): number {
+  const amountMatch = message.match(/([\d,]+(?:\.\d+)?)\s*(만원|만 원|원)/)
+  if (!amountMatch) {
+    return 0
+  }
+  return parseKoreanMoneyAmount(amountMatch[1], amountMatch[2])
 }
 
 function createFallbackInvestmentResearchReply(): string {
@@ -1813,6 +1864,7 @@ function sanitizeNextActionRecommendation({
 
   const contextualRecommendation = createContextualNextActionRecommendation(
     currentIntent,
+    message,
     profile,
     hasSpendingContext,
   )
@@ -1907,11 +1959,32 @@ function sanitizeSecondaryActionRecommendations({
 
 function createContextualNextActionRecommendation(
   intent: ConversationIntent | null,
+  message: string,
   profile: FinancialProfile,
   hasSpendingContext: boolean,
 ): NextActionRecommendation | null {
   switch (intent) {
     case 'investment_research':
+      if (isInvestmentExecutionPlanningRequest(message)) {
+        return {
+          title: '투자 실행 기준을 점검할까요',
+          description:
+            '확정한 비중을 기준으로 매수 단위, 환전, 점검 주기를 정리합니다.',
+          primaryLabel: '실행 기준 점검',
+          draft:
+            '확정한 투자 비중을 기준으로 매수 단위, 환전 기준, 월별 점검 주기를 간단히 정리해 주세요.',
+        }
+      }
+      if (isInvestmentConfirmationRequest(message)) {
+        return {
+          title: '이번 월급 계획을 마무리할까요',
+          description:
+            '투자 비중까지 정했으니 전체 월급 배분과 실행 항목을 확인합니다.',
+          primaryLabel: '계획 마무리',
+          draft:
+            '지금까지 정한 월급 배분과 투자 계획을 한 번에 확인할 수 있게 요약해 주세요.',
+        }
+      }
       return {
         title: '투자 후보를 이어서 볼까요',
         description:
@@ -2194,6 +2267,7 @@ function createIntentInstructions(
       'For investment questions, answer the investment request directly when an investable amount or portfolio request is provided. Mention safety constraints briefly only as context; do not turn the response into a safety-check question unless investment amount cannot be determined at all.',
       'For investment research requests, return concrete research candidates with real tickers whenever possible. Do not answer only with broad product groups such as S&P 500 ETF or Nasdaq 100 ETF; write examples such as VOO/SPY, QQQM/QQQ, SCHD/DGRO, MSFT/AAPL, or NVDA when they fit the role.',
       'Prefer a compact markdown table with columns 역할, 후보(티커), 비중 초안, 근거, 주요 위험, 추가 확인 자료. Include both ETF candidates and individual-stock candidates when the user asks for ETF and stocks. Keep each cell short enough for mobile. If current data is missing, write 확인 필요 instead of inventing it.',
+      'When the user asks a follow-up about ratio adjustment, confirmation, execution plan, purchase amount, or how to verify data, do not repeat the original candidate table. Answer only the changed allocation, execution steps, or verification method.',
       'Do not give buy/sell/hold instructions. Frame securities as research candidates or reference allocations, not personalized recommendations.',
       'Do not invent current prices, recent earnings, valuation multiples, news, rankings, reports, exact quotes, tax rules, or legal details. Use only source-backed data provided by the user; otherwise say live/source verification is needed.',
     )
@@ -3169,15 +3243,16 @@ function shouldEnsureInvestmentComparison(message: string): boolean {
     normalizedMessage.includes('방법') ||
     normalizedMessage.includes('어떻게') ||
     normalizedMessage.includes('어떤자료') ||
-    normalizedMessage.includes('먼저찾')
+    normalizedMessage.includes('먼저찾') ||
+    isInvestmentExecutionPlanningRequest(message) ||
+    isInvestmentConfirmationRequest(message)
   ) {
     return false
   }
 
   return (
-    normalizedMessage.includes('비교') ||
-    normalizedMessage.includes('포트폴리오') ||
-    normalizedMessage.includes('구성') ||
+    normalizedMessage.includes('후보비교') ||
+    normalizedMessage.includes('포트폴리오구성') ||
     (
       normalizedMessage.includes('후보') &&
       (
@@ -3190,6 +3265,27 @@ function shouldEnsureInvestmentComparison(message: string): boolean {
       normalizedMessage.includes('ETF') &&
       normalizedMessage.includes('종목')
     )
+  )
+}
+
+function isInvestmentExecutionPlanningRequest(message: string): boolean {
+  const normalizedMessage = normalizeKoreanText(message)
+  return (
+    normalizedMessage.includes('실행계획') ||
+    normalizedMessage.includes('매수') ||
+    normalizedMessage.includes('금액배분') ||
+    normalizedMessage.includes('분배') ||
+    normalizedMessage.includes('배분표')
+  )
+}
+
+function isInvestmentConfirmationRequest(message: string): boolean {
+  const normalizedMessage = normalizeKoreanText(message)
+  return (
+    normalizedMessage.includes('확정') ||
+    normalizedMessage.includes('이대로') ||
+    normalizedMessage.includes('실행할게') ||
+    normalizedMessage.includes('완료')
   )
 }
 
@@ -3223,9 +3319,14 @@ function ensureConversationalFollowUp(reply: string, message: string): string {
   }
 
   const currentIntent = getConversationIntent(message)
+  if (isInvestmentConfirmationRequest(message)) {
+    return trimmedReply
+  }
   const followUp =
     currentIntent === 'investment_research'
-      ? '다음으로 비중을 조정할지, 확인할 자료를 더 좁힐지 정해볼까요?'
+      ? isInvestmentExecutionPlanningRequest(message)
+        ? '매수 단위나 환전 기준까지 같이 정리해 볼까요?'
+        : '다음으로 비중을 조정할지, 확인할 자료를 더 좁힐지 정해볼까요?'
       : currentIntent === 'detail_adjust'
         ? '이제 전체 월급 배분을 확인해 볼까요?'
         : '다음으로 이어서 조정할 부분이 있을까요?'

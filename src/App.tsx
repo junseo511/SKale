@@ -629,232 +629,245 @@ function App(): ReactNode {
         </section>
 
         <section className="workspace">
-          <section className="conversation-panel">
-            <div className="panel-heading">
-              <div>
-                <span className="agent-avatar">
-                  <Bot size={19} />
-                </span>
+          <div className="workspace-primary">
+            <section className="conversation-panel">
+              <div className="panel-heading">
                 <div>
-                  <strong>월급 플래너</strong>
-                  <p>한 가지씩 알려주시면 돼요</p>
-                </div>
-              </div>
-              <span
-                className={`server-status-dot ${serverStatus}`}
-                aria-label={getServerStatusLabel(serverStatus)}
-                title={getServerStatusLabel(serverStatus)}
-              />
-            </div>
-
-            <div
-              className="message-list"
-              aria-live="polite"
-              ref={messageListReference}
-            >
-              {messages.map((message) => (
-                <MessageBubble message={message} key={message.id} />
-              ))}
-              {isReplying && (
-                <div className="message-row agent">
-                  <span className="message-avatar">
-                    <Bot size={16} />
+                  <span className="agent-avatar">
+                    <Bot size={19} />
                   </span>
-                  <div className="typing-bubble">
-                    <i />
-                    <i />
-                    <i />
-                    {replyWaitNotice}
+                  <div>
+                    <strong>월급 플래너</strong>
+                    <p>한 가지씩 알려주시면 돼요</p>
+                  </div>
+                </div>
+                <span
+                  className={`server-status-dot ${serverStatus}`}
+                  aria-label={getServerStatusLabel(serverStatus)}
+                  title={getServerStatusLabel(serverStatus)}
+                />
+              </div>
+
+              <div
+                className="message-list"
+                aria-live="polite"
+                ref={messageListReference}
+              >
+                {messages.map((message) => (
+                  <MessageBubble message={message} key={message.id} />
+                ))}
+                {isReplying && (
+                  <div className="message-row agent">
+                    <span className="message-avatar">
+                      <Bot size={16} />
+                    </span>
+                    <div className="typing-bubble">
+                      <i />
+                      <i />
+                      <i />
+                      {replyWaitNotice}
+                    </div>
+                  </div>
+                )}
+
+                {pendingResponse && (
+                  <div ref={responseFocusReference}>
+                    <ProposalCards
+                      response={pendingResponse}
+                      onApplyProfile={applyProfileProposal}
+                      onApplyMonthlySpending={applyMonthlySpendingProposal}
+                      onStartMonthlySpendingReview={
+                        startMonthlySpendingClarification
+                      }
+                    />
+                  </div>
+                )}
+                {shouldShowNextAction && (
+                  <NextActionPanel
+                    action={recommendedAction}
+                    aiSecondaryActions={recommendedSecondaryActions}
+                    profile={profile}
+                    hasSpendingHistory={hasSpendingHistory}
+                    completedActionIntents={completedActionIntents}
+                    plan={plan}
+                    stockResearchRequest={stockResearchRequest}
+                    targetMonth={effectiveTargetMonth}
+                    onOpenSalaryCalculator={openSalaryCalculator}
+                    onUseDraft={(message) => {
+                      setDraft(message)
+                      requestAnimationFrame(() =>
+                        composerTextAreaReference.current?.focus(),
+                      )
+                    }}
+                  />
+                )}
+              </div>
+
+              {shouldShowQuickMessages && (
+                <div className="suggestion-section open">
+                  <div className="starter-heading" id="starter-card-heading">
+                    <span>이렇게도 질문해 보세요</span>
+                    <small>추천 문장</small>
+                  </div>
+                  <div
+                    id="starter-card-list"
+                    className="starter-content"
+                    aria-labelledby="starter-card-heading"
+                    aria-hidden="false"
+                  >
+                    <div className="quick-message-list" aria-label="시작 카드">
+                      <button
+                        className="starter-card calculator-quick-button"
+                        type="button"
+                        onClick={openSalaryCalculator}
+                      >
+                        <span>
+                          <Calculator size={16} />
+                        </span>
+                        <small>실수령액을 계산해 주세요.</small>
+                      </button>
+                      {quickMessages.map((message) => (
+                        <button
+                          className="starter-card"
+                          type="button"
+                          key={message.prompt}
+                          onClick={() => setDraft(message.prompt)}
+                        >
+                          <span>{message.icon}</span>
+                          <small>{message.label}</small>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
 
-              {pendingResponse && (
-                <div ref={responseFocusReference}>
-                  <ProposalCards
-                    response={pendingResponse}
-                    onApplyProfile={applyProfileProposal}
-                    onApplyMonthlySpending={applyMonthlySpendingProposal}
-                    onStartMonthlySpendingReview={
-                      startMonthlySpendingClarification
-                    }
-                  />
+              {attachments.length > 0 && (
+                <div className="attachment-preview-list">
+                  {attachments.map((attachment) => (
+                    <div className="attachment-preview" key={attachment.id}>
+                      <img src={attachment.previewUrl} alt="" />
+                      <span>{attachment.name}</span>
+                      <button
+                        type="button"
+                        aria-label={`${attachment.name} 첨부 취소`}
+                        onClick={() => {
+                          if (attachment.previewUrl) {
+                            URL.revokeObjectURL(attachment.previewUrl)
+                          }
+                          setAttachments((currentAttachments) =>
+                            currentAttachments.filter(
+                              (item) => item.id !== attachment.id,
+                            ),
+                          )
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
-              {shouldShowNextAction && (
-                <NextActionPanel
-                  action={recommendedAction}
-                  aiSecondaryActions={recommendedSecondaryActions}
-                  profile={profile}
-                  hasSpendingHistory={hasSpendingHistory}
-                  completedActionIntents={completedActionIntents}
-                  plan={plan}
-                  stockResearchRequest={stockResearchRequest}
-                  targetMonth={effectiveTargetMonth}
-                  onOpenSalaryCalculator={openSalaryCalculator}
-                  onUseDraft={(message) => {
-                    setDraft(message)
-                    requestAnimationFrame(() =>
-                      composerTextAreaReference.current?.focus(),
-                    )
+
+              {errorMessage && (
+                <div className="conversation-error" role="alert">
+                  <CircleAlert size={16} />
+                  {errorMessage}
+                </div>
+              )}
+
+              <div className="composer">
+                <textarea
+                  ref={composerTextAreaReference}
+                  aria-label="SKale Agent에게 보낼 메시지"
+                  value={draft}
+                  placeholder="궁금한 점이나 내 상황을 편하게 적어주세요"
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === 'Enter' &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing
+                    ) {
+                      event.preventDefault()
+                      void sendMessage()
+                    }
                   }}
                 />
-              )}
-            </div>
-
-            {shouldShowQuickMessages && (
-              <div className="suggestion-section open">
-                <div className="starter-heading" id="starter-card-heading">
-                  <span>이렇게도 질문해 보세요</span>
-                  <small>추천 문장</small>
-                </div>
-                <div
-                  id="starter-card-list"
-                  className="starter-content"
-                  aria-labelledby="starter-card-heading"
-                  aria-hidden="false"
-                >
-                  <div className="quick-message-list" aria-label="시작 카드">
-                    <button
-                      className="starter-card calculator-quick-button"
-                      type="button"
-                      onClick={openSalaryCalculator}
-                    >
-                      <span>
-                        <Calculator size={16} />
-                      </span>
-                      <small>실수령액을 계산해 주세요.</small>
-                    </button>
-                    {quickMessages.map((message) => (
-                      <button
-                        className="starter-card"
-                        type="button"
-                        key={message.prompt}
-                        onClick={() => setDraft(message.prompt)}
-                      >
-                        <span>{message.icon}</span>
-                        <small>{message.label}</small>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {attachments.length > 0 && (
-              <div className="attachment-preview-list">
-                {attachments.map((attachment) => (
-                  <div className="attachment-preview" key={attachment.id}>
-                    <img src={attachment.previewUrl} alt="" />
-                    <span>{attachment.name}</span>
-                    <button
-                      type="button"
-                      aria-label={`${attachment.name} 첨부 취소`}
-                      onClick={() => {
-                        if (attachment.previewUrl) {
-                          URL.revokeObjectURL(attachment.previewUrl)
-                        }
-                        setAttachments((currentAttachments) =>
-                          currentAttachments.filter(
-                            (item) => item.id !== attachment.id,
-                          ),
-                        )
-                      }}
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {errorMessage && (
-              <div className="conversation-error" role="alert">
-                <CircleAlert size={16} />
-                {errorMessage}
-              </div>
-            )}
-
-            <div className="composer">
-              <textarea
-                ref={composerTextAreaReference}
-                aria-label="SKale Agent에게 보낼 메시지"
-                value={draft}
-                placeholder="궁금한 점이나 내 상황을 편하게 적어주세요"
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === 'Enter' &&
-                    !event.shiftKey &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault()
-                    void sendMessage()
-                  }
-                }}
-              />
-              <div className="composer-footer">
-                <div className="attachment-actions">
-                  <label className="attach-button">
-                    <ImagePlus size={17} />
-                    사용내역 사진
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/heic"
-                      multiple
-                      onChange={(event) => {
-                        void addAttachments(event.target.files)
-                        event.target.value = ''
-                      }}
-                    />
-                  </label>
-                  <label className="month-field">
-                    사용내역 자료 월
-                    <span className="month-control">
-                      <select
-                        aria-label="사용내역 자료 월 선택 방식"
-                        value={spendingMonthMode}
-                        onChange={(event) =>
-                          setSpendingMonthMode(
-                            event.target.value as SpendingMonthMode,
-                          )
-                        }
-                      >
-                        <option value="auto">자동</option>
-                        <option value="manual">직접 선택</option>
-                      </select>
-                      {spendingMonthMode === 'manual' && (
-                        <input
-                          type="month"
-                          value={targetMonth}
+                <div className="composer-footer">
+                  <div className="attachment-actions">
+                    <label className="attach-button">
+                      <ImagePlus size={17} />
+                      사용내역 사진
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/heic"
+                        multiple
+                        onChange={(event) => {
+                          void addAttachments(event.target.files)
+                          event.target.value = ''
+                        }}
+                      />
+                    </label>
+                    <label className="month-field">
+                      사용내역 자료 월
+                      <span className="month-control">
+                        <select
+                          aria-label="사용내역 자료 월 선택 방식"
+                          value={spendingMonthMode}
                           onChange={(event) =>
-                            setTargetMonth(event.target.value)
+                            setSpendingMonthMode(
+                              event.target.value as SpendingMonthMode,
+                            )
                           }
-                        />
-                      )}
-                    </span>
-                  </label>
+                        >
+                          <option value="auto">자동</option>
+                          <option value="manual">직접 선택</option>
+                        </select>
+                        {spendingMonthMode === 'manual' && (
+                          <input
+                            type="month"
+                            value={targetMonth}
+                            onChange={(event) =>
+                              setTargetMonth(event.target.value)
+                            }
+                          />
+                        )}
+                      </span>
+                    </label>
+                  </div>
+                  <button
+                    className="send-button"
+                    type="button"
+                    disabled={
+                      isReplying ||
+                      (!draft.trim() && attachments.length === 0)
+                    }
+                    onClick={() => void sendMessage()}
+                  >
+                    <ArrowUp size={18} />
+                    보내기
+                  </button>
                 </div>
-                <button
-                  className="send-button"
-                  type="button"
-                  disabled={
-                    isReplying ||
-                    (!draft.trim() && attachments.length === 0)
-                  }
-                  onClick={() => void sendMessage()}
-                >
-                  <ArrowUp size={18} />
-                  보내기
-                </button>
               </div>
-            </div>
 
-            <p className="privacy-copy">
-              <LockKeyhole size={13} />
-              사진을 올릴 땐 민감한 개인정보를 가려주세요.
-            </p>
-          </section>
+              <p className="privacy-copy">
+                <LockKeyhole size={13} />
+                사진을 올릴 땐 민감한 개인정보를 가려주세요.
+              </p>
+            </section>
+
+            <PlanSection
+              plan={plan}
+              stockResearchRequest={stockResearchRequest}
+              onUseDraft={(message) => {
+                setDraft(message)
+                requestAnimationFrame(() =>
+                  composerTextAreaReference.current?.focus(),
+                )
+              }}
+            />
+          </div>
 
           <aside className="context-panel">
             <PlanSnapshotCard
@@ -888,16 +901,6 @@ function App(): ReactNode {
           </aside>
         </section>
 
-        <PlanSection
-          plan={plan}
-          stockResearchRequest={stockResearchRequest}
-          onUseDraft={(message) => {
-            setDraft(message)
-            requestAnimationFrame(() =>
-              composerTextAreaReference.current?.focus(),
-            )
-          }}
-        />
       </main>
 
       {isSalaryCalculatorOpen && (
@@ -1504,7 +1507,8 @@ function parseMarkdownTable(content: string): {
   headers: string[]
   rows: string[][]
 } | null {
-  const lines = content.split('\n')
+  const normalizedContent = normalizeMarkdownTableContent(content)
+  const lines = normalizedContent.split('\n')
   const separatorIndex = lines.findIndex((line, index) => {
     if (index === 0 || !isMarkdownTableSeparator(line)) {
       return false
@@ -1538,6 +1542,37 @@ function parseMarkdownTable(content: string): {
     headers,
     rows: rowLines.map(splitMarkdownTableRow),
   }
+}
+
+function normalizeMarkdownTableContent(content: string): string {
+  return content
+    .replace(/\|\s+\|/g, '|\n|')
+    .split('\n')
+    .flatMap((line) => splitTableLineWithTrailingText(line))
+    .join('\n')
+}
+
+function splitTableLineWithTrailingText(line: string): string[] {
+  const trimmedLine = line.trim()
+  if (!trimmedLine.includes('|')) {
+    return [line]
+  }
+
+  const lastPipeIndex = trimmedLine.lastIndexOf('|')
+  if (lastPipeIndex < 0 || lastPipeIndex === trimmedLine.length - 1) {
+    return [line]
+  }
+
+  const possibleRow = trimmedLine.slice(0, lastPipeIndex + 1)
+  const trailingText = trimmedLine.slice(lastPipeIndex + 1).trim()
+  if (
+    trailingText.length === 0 ||
+    splitMarkdownTableRow(possibleRow).length < 2
+  ) {
+    return [line]
+  }
+
+  return [possibleRow, trailingText]
 }
 
 function isMarkdownTableSeparator(line: string): boolean {
@@ -3056,9 +3091,11 @@ function resolveRecommendedAction(
   messages: ConversationMessage[],
   completedActionIntents: ConversationActionIntent[],
 ): NextAction {
-  const latestUserIntent = getLatestUserIntent(messages)
+  const latestUserMessage = getLatestUserMessageContent(messages)
+  const latestUserIntent = latestUserMessage ? getActionIntent(latestUserMessage) : null
   const contextualAction = createContextualNextAction(
     latestUserIntent,
+    latestUserMessage ?? '',
     profile,
     hasSpendingHistory,
   )
@@ -3174,15 +3211,23 @@ function toMessageNextAction(
 function getLatestUserIntent(
   messages: ConversationMessage[],
 ): ConversationActionIntent | null {
+  const latestUserMessage = getLatestUserMessageContent(messages)
+  return latestUserMessage ? getActionIntent(latestUserMessage) : null
+}
+
+function getLatestUserMessageContent(
+  messages: ConversationMessage[],
+): string | null {
   const latestUserMessage = messages
     .slice()
     .reverse()
     .find((message) => message.role === 'user' && message.status === 'sent')
-  return latestUserMessage ? getActionIntent(latestUserMessage.content) : null
+  return latestUserMessage?.content ?? null
 }
 
 function createContextualNextAction(
   intent: ConversationActionIntent | null,
+  message: string,
   profile: FinancialProfile,
   hasSpendingHistory: boolean,
 ): NextAction | null {
@@ -3191,6 +3236,26 @@ function createContextualNextAction(
   }
 
   if (intent === 'investment_research') {
+    if (isInvestmentExecutionPlanningMessage(message)) {
+      return {
+        kind: 'message',
+        title: '투자 실행 기준을 점검할까요',
+        description:
+          '확정한 비중을 기준으로 매수 단위, 환전 기준, 점검 주기를 정리할 수 있어요.',
+        primaryLabel: '실행 기준 점검',
+        draft:
+          '확정한 투자 비중을 기준으로 매수 단위, 환전 기준, 월별 점검 주기를 간단히 정리해 주세요.',
+      }
+    }
+    if (isInvestmentConfirmationMessage(message)) {
+      return {
+        kind: 'plan',
+        title: '이번 월급 계획을 마무리할까요',
+        description:
+          '투자 계획까지 정했으니 전체 월급 배분을 확인하면 됩니다.',
+        primaryLabel: '계획 보기',
+      }
+    }
     return {
       kind: 'message',
       title: '투자 후보를 이어서 볼까요',
@@ -3290,6 +3355,27 @@ function createContextualNextAction(
   }
 
   return null
+}
+
+function isInvestmentExecutionPlanningMessage(message: string): boolean {
+  const normalizedMessage = normalizeActionText(message)
+  return (
+    normalizedMessage.includes('실행계획') ||
+    normalizedMessage.includes('매수') ||
+    normalizedMessage.includes('금액배분') ||
+    normalizedMessage.includes('분배') ||
+    normalizedMessage.includes('배분표')
+  )
+}
+
+function isInvestmentConfirmationMessage(message: string): boolean {
+  const normalizedMessage = normalizeActionText(message)
+  return (
+    normalizedMessage.includes('확정') ||
+    normalizedMessage.includes('이대로') ||
+    normalizedMessage.includes('실행할게') ||
+    normalizedMessage.includes('완료')
+  )
 }
 
 function createAlternativeNextAction(
@@ -3479,7 +3565,11 @@ function getActionIntent(message: string): ConversationActionIntent | null {
     normalizedMessage.includes('포트폴리오') ||
     normalizedMessage.includes('종목') ||
     normalizedMessage.includes('주식') ||
-    normalizedMessage.includes('ETF')
+    normalizedMessage.includes('ETF') ||
+    normalizedMessage.includes('매수') ||
+    normalizedMessage.includes('운용보수') ||
+    normalizedMessage.includes('구성종목') ||
+    normalizedMessage.includes('6:4')
   ) {
     return 'investment_research'
   }
