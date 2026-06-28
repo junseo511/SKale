@@ -3066,7 +3066,7 @@ function createReplyWaitNotice(
 
   const intent = getActionIntent(message)
   if (intent === 'investment_research') {
-    return '투자 후보를 비교해 정리하고 있어요. 최대 45초까지 걸릴 수 있어요.'
+    return '투자 후보를 비교해 정리하고 있어요. 최대 1분 까지 걸릴 수 있어요.'
   }
   if (intent === 'spending_distribution') {
     return '사용내역을 분류하고 있어요. 최대 1분 까지 걸릴 수 있어요.'
