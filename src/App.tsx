@@ -294,8 +294,8 @@ function App(): ReactNode {
   const effectiveTargetMonth =
     spendingMonthMode === 'manual' ? targetMonth : undefined
   const spendingSummaryPrompt = effectiveTargetMonth
-    ? `${Number(effectiveTargetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해 주세요.`
-    : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해 주세요.'
+    ? `${Number(effectiveTargetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석하고, 내 소비 분포에 대한 피드백을 제시해 주세요.`
+    : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포를 분석하고, 내 소비 분포에 대한 피드백을 제시해 주세요.'
   const usPortfolioPrompt =
     plan && plan.availableInvestmentAmount > 0
       ? `${formatWon(plan.availableInvestmentAmount)}으로 미국 주식을 위주로 투자 포트폴리오를 구성해 주세요. ETF와 개별 종목 후보는 실제 티커로 적고, 역할별로 나눠 주세요. 현재가와 재무 데이터는 출처가 있을 때만 사용하고, 출처가 없으면 확인 필요로 표시해 주세요.`
@@ -304,7 +304,7 @@ function App(): ReactNode {
     {
       label: effectiveTargetMonth
         ? `${Number(effectiveTargetMonth.split('-')[1])}월 지출 분포를 분석해 주세요.`
-        : '사용내역 지출 분포를 분석해 주세요.',
+        : '내 소비 분포를 분석하고 피드백해 주세요.',
       prompt: spendingSummaryPrompt,
       icon: <CalendarDays size={16} />,
     },
@@ -489,7 +489,7 @@ function App(): ReactNode {
         (summary) => summary.month !== proposal.month,
       ),
       {
-        ...proposal,
+        ...reconcileMonthlySpendingAmounts(proposal),
         id: crypto.randomUUID(),
         needReview: proposal.needReview && !isReviewed,
       },
@@ -509,7 +509,9 @@ function App(): ReactNode {
   ): void {
     setMonthlySpending((currentSummaries) =>
       currentSummaries.map((summary) =>
-        summary.id === summaryId ? { ...summary, ...patch } : summary,
+        summary.id === summaryId
+          ? reconcileMonthlySpendingAmounts({ ...summary, ...patch })
+          : summary,
       ),
     )
   }
@@ -1081,8 +1083,8 @@ function createSecondaryNextActions({
   const spendingAction: SecondaryNextAction = {
     label: `${monthLabel} 분포`,
     message: targetMonth
-      ? `${Number(targetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석해 주세요.`
-      : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해 주세요.',
+      ? `${Number(targetMonth.split('-')[1])}월 카드 내역을 카테고리별 지출 분포로 분석하고, 내 소비 분포에 대한 피드백을 제시해 주세요.`
+      : '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포를 분석하고, 내 소비 분포에 대한 피드백을 제시해 주세요.',
     icon: <CalendarDays size={15} />,
   }
   const fixedCostAction: SecondaryNextAction = {
@@ -1189,7 +1191,7 @@ function createSecondaryNextActions({
   return uniqueSecondaryActionMessages([
     ...aiSecondaryActions,
     ...localSecondaryActions,
-  ]).slice(0, 3)
+  ]).slice(0, 4)
 }
 
 function uniqueNextActions(
@@ -1455,17 +1457,29 @@ function renderAgentMessageContent(content: string): ReactNode {
   return (
     <>
       {table.before && <p>{renderInlineMarkdown(table.before)}</p>}
-      <div className="message-table-cards">
-        {table.rows.map((row, rowIndex) => (
-          <article key={`${row[0] ?? 'row'}-${rowIndex}`}>
-            {table.headers.map((header, headerIndex) => (
-              <div key={`${header}-${headerIndex}`}>
-                <span>{stripInlineMarkdown(header)}</span>
-                <strong>{stripInlineMarkdown(row[headerIndex] || '-')}</strong>
-              </div>
+      <div className="message-table-scroll" role="region" aria-label="답변 표">
+        <table className="message-table">
+          <thead>
+            <tr>
+              {table.headers.map((header, headerIndex) => (
+                <th key={`${header}-${headerIndex}`} scope="col">
+                  {stripInlineMarkdown(header)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row, rowIndex) => (
+              <tr key={`${row[0] ?? 'row'}-${rowIndex}`}>
+                {table.headers.map((header, headerIndex) => (
+                  <td key={`${header}-${headerIndex}`}>
+                    {stripInlineMarkdown(row[headerIndex] || '-')}
+                  </td>
+                ))}
+              </tr>
             ))}
-          </article>
-        ))}
+          </tbody>
+        </table>
       </div>
       {table.after && <p>{renderInlineMarkdown(table.after)}</p>}
     </>
@@ -1860,7 +1874,11 @@ function MonthlyHistoryCard({
     Math.max(sortedSummaries.length - 1, 0),
   )
   const selectedSummary = sortedSummaries[safeSelectedIndex]
-  const spendingTrend = createSpendingTrend(sortedSummaries)
+    ? reconcileMonthlySpendingAmounts(sortedSummaries[safeSelectedIndex])
+    : undefined
+  const spendingTrend = createSpendingTrend(
+    sortedSummaries.map((summary) => reconcileMonthlySpendingAmounts(summary)),
+  )
 
   return (
     <section className="context-card history-card">
@@ -1938,13 +1956,6 @@ function MonthlyHistoryCard({
                 breakdown={selectedSummary.categoryBreakdown}
                 totalExpense={selectedSummary.totalExpense}
               />
-            )}
-            {selectedSummary.notableCategories.length > 0 && (
-              <div className="history-categories">
-                {selectedSummary.notableCategories.map((category) => (
-                  <span key={category}>{category}</span>
-                ))}
-              </div>
             )}
             {selectedSummary.needReview && (
               <div className="history-review-panel">
@@ -3005,7 +3016,7 @@ function getNextAction(
           '월급 기준은 잡혔으니 카드 내역이나 고정비를 더해 실제 생활비 기준으로 계획을 맞춰볼 수 있어요.',
         primaryLabel: '사용내역 분석',
         draft:
-          '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해 주세요.',
+          '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포를 분석하고, 내 소비 분포에 대한 피드백을 제시해 주세요.',
       }
     }
 
@@ -3911,7 +3922,9 @@ function createVisiblePendingResponse(
       monthlySpending,
     )
       ? undefined
-      : response.monthlySpendingProposal,
+      : response.monthlySpendingProposal
+        ? reconcileMonthlySpendingAmounts(response.monthlySpendingProposal)
+        : undefined,
     appliedFacts: [],
     missingData: [],
   }
@@ -3923,12 +3936,118 @@ function stageMonthlySpendingProposal(
   monthlySpending: MonthlySpendingSummary[],
   proposal: NonNullable<PaydayConversationResponse['monthlySpendingProposal']>,
 ): MonthlySpendingSummary[] {
+  const reconciledProposal = reconcileMonthlySpendingAmounts(proposal)
   return [
     ...monthlySpending.filter((summary) => summary.month !== proposal.month),
     {
-      ...proposal,
+      ...reconciledProposal,
       id: crypto.randomUUID(),
       needReview: true,
+    },
+  ]
+}
+
+function reconcileMonthlySpendingAmounts<
+  Summary extends {
+    totalExpense: number | null
+    essentialExpense: number | null
+    flexibleExpense: number | null
+    categoryBreakdown: SpendingCategoryAmount[]
+  },
+>(summary: Summary): Summary {
+  const categoryBreakdown = mergeCategoryBreakdown(summary.categoryBreakdown)
+  const categoryTotal = categoryBreakdown.reduce(
+    (total, item) => total + item.amount,
+    0,
+  )
+  const splitTotal =
+    summary.essentialExpense !== null && summary.flexibleExpense !== null
+      ? summary.essentialExpense + summary.flexibleExpense
+      : null
+  const totalExpense = Math.max(
+    summary.totalExpense ?? 0,
+    splitTotal ?? 0,
+    categoryTotal,
+  )
+
+  if (totalExpense <= 0) {
+    return { ...summary, categoryBreakdown } as Summary
+  }
+
+  const essentialExpense =
+    summary.essentialExpense !== null
+      ? Math.min(summary.essentialExpense, totalExpense)
+      : summary.flexibleExpense !== null
+        ? Math.max(totalExpense - summary.flexibleExpense, 0)
+        : null
+  const flexibleExpense =
+    essentialExpense !== null
+      ? Math.max(totalExpense - essentialExpense, 0)
+      : summary.flexibleExpense
+  const reconciledBreakdown = reconcileCategoryBreakdown(
+    categoryBreakdown,
+    totalExpense,
+  )
+
+  return {
+    ...summary,
+    totalExpense,
+    essentialExpense,
+    flexibleExpense,
+    categoryBreakdown: reconciledBreakdown,
+  } as Summary
+}
+
+function mergeCategoryBreakdown(
+  categoryBreakdown: SpendingCategoryAmount[],
+): SpendingCategoryAmount[] {
+  const amountByCategory = new Map<string, number>()
+  for (const item of categoryBreakdown) {
+    const category = item.category.trim()
+    if (!category || item.amount <= 0) {
+      continue
+    }
+    amountByCategory.set(
+      category,
+      (amountByCategory.get(category) ?? 0) + item.amount,
+    )
+  }
+
+  return [...amountByCategory.entries()].map(([category, amount]) => ({
+    category,
+    amount,
+  }))
+}
+
+function reconcileCategoryBreakdown(
+  categoryBreakdown: SpendingCategoryAmount[],
+  totalExpense: number,
+): SpendingCategoryAmount[] {
+  const categoryTotal = categoryBreakdown.reduce(
+    (total, item) => total + item.amount,
+    0,
+  )
+  const difference = totalExpense - categoryTotal
+  if (difference <= 0) {
+    return categoryBreakdown
+  }
+
+  const etcIndex = categoryBreakdown.findIndex(
+    (item) => item.category.trim() === '기타',
+  )
+  if (etcIndex >= 0) {
+    return categoryBreakdown.map((item, index) =>
+      index === etcIndex
+        ? { ...item, amount: item.amount + difference }
+        : item,
+    )
+  }
+
+  return [
+    ...categoryBreakdown,
+    {
+      category: '기타',
+      amount: difference,
     },
   ]
 }

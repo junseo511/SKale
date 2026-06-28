@@ -201,7 +201,7 @@ export const paydayConversationResponseSchema = z
           })
           .strict(),
       )
-      .max(3)
+      .max(4)
       .optional(),
   })
   .strict()
@@ -301,9 +301,12 @@ export function toPaydayInput(profile: FinancialProfile): PaydayInput | null {
   }
 
   const monthlySalary = profile.monthlySalary
+  const customUseTotals = calculateCustomUseTotals(profile.customUses)
   const essentialExpense =
-    profile.essentialExpense ??
-    Math.round(monthlySalary * DEFAULT_ESSENTIAL_EXPENSE_RATIO)
+    hasCustomUseInBucket(profile.customUses, 'essential')
+      ? customUseTotals.essential
+      : (profile.essentialExpense ??
+        Math.round(monthlySalary * DEFAULT_ESSENTIAL_EXPENSE_RATIO))
   const targetEmergencyFund =
     profile.targetEmergencyFund ??
     Math.round(essentialExpense * DEFAULT_EMERGENCY_FUND_MONTHS)
@@ -316,11 +319,15 @@ export function toPaydayInput(profile: FinancialProfile): PaydayInput | null {
     targetEmergencyFund,
     goalName: profile.goalName || '목표 자금',
     goalMonthlyAmount:
-      profile.goalMonthlyAmount ??
-      Math.round(monthlySalary * DEFAULT_GOAL_MONTHLY_AMOUNT_RATIO),
+      hasCustomUseInBucket(profile.customUses, 'goal')
+        ? customUseTotals.goal
+        : (profile.goalMonthlyAmount ??
+          Math.round(monthlySalary * DEFAULT_GOAL_MONTHLY_AMOUNT_RATIO)),
     flexibleSpending:
-      profile.flexibleSpending ??
-      Math.round(monthlySalary * DEFAULT_FLEXIBLE_SPENDING_RATIO),
+      hasCustomUseInBucket(profile.customUses, 'flexible')
+        ? customUseTotals.flexible
+        : (profile.flexibleSpending ??
+          Math.round(monthlySalary * DEFAULT_FLEXIBLE_SPENDING_RATIO)),
     riskProfile: profile.riskProfile ?? '균형형',
     investmentHorizon: profile.investmentHorizon ?? '3년 이상',
     customUses: profile.customUses,

@@ -231,7 +231,7 @@ const paydayConversationModelResponseValidationSchema = z
           })
           .strict(),
       )
-      .max(3)
+      .max(4)
       .optional(),
   })
   .strict()
@@ -584,7 +584,7 @@ const paydayConversationResponseSchema = {
     },
     secondaryActionRecommendations: {
       type: 'array',
-      maxItems: 3,
+      maxItems: 4,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -1724,9 +1724,9 @@ function createFallbackPaydayResponse(message: string): {
       appliedFacts: [],
       nextActionRecommendation: {
         title: '사용내역을 분석해볼까요',
-        description: '카드 내역을 보내주시면 자료 월을 판단하고 카테고리별 지출 분포로 정리해요.',
+        description: '카드 내역을 보내주시면 자료 월을 판단하고 지출 분포와 소비 피드백을 함께 정리해요.',
         primaryLabel: '사용내역 분석하기',
-        draft: '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해 주세요.',
+        draft: '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포를 분석하고, 내 소비 분포에 대한 피드백을 제시해 주세요.',
       },
     }
   }
@@ -2072,7 +2072,7 @@ function createSpendingDataNextActionRecommendation(): NextActionRecommendation 
       '카드 내역 텍스트나 이미지를 받아야 자료 월과 지출 금액을 확인할 수 있어요.',
     primaryLabel: '사용내역 보내기',
     draft:
-      '분석할 카드 사용내역을 다시 보낼게요. 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 정리해 주세요.',
+      '분석할 카드 사용내역을 다시 보낼게요. 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포와 소비 피드백을 함께 정리해 주세요.',
   }
 }
 
@@ -2197,8 +2197,11 @@ function createBasePaydayInstructions(): string[] {
     'The current user message is authoritative. Continue the user’s current intent instead of pivoting back to a default checklist or older stage.',
     'nextActionRecommendation must be a natural continuation of the current user message. Do not recommend spending history, safety checks, preferences, or investment research unless that is the current intent or directly necessary to complete it.',
     'The app calculates salary allocations and investable cash. Do not claim the model finalized those amounts.',
+    'Before returning a monthlySpendingProposal, verify arithmetic: totalExpense must equal essentialExpense plus flexibleExpense when both are known; categoryBreakdown amounts must sum to totalExpense. If a visible expense cannot be categorized, add it as 기타 instead of dropping it.',
+    'Before returning any table or numeric explanation, cross-check every percentage, subtotal, and total against the provided context. If the numbers cannot be verified, say 확인 필요 instead of inventing a precise amount.',
+    'Explain reasoning with slightly more detail than a one-line answer: include the basis, the effect on the payday plan, and one practical next step. Keep it compact.',
     'Always return nextActionRecommendation as a concrete Korean message the user can send next.',
-    'When useful, return secondaryActionRecommendations with 1 to 3 distinct next actions that are also natural continuations. Do not repeat the primary action, completed actions, or requests for data already provided.',
+    'When useful, return secondaryActionRecommendations with 3 to 4 distinct next actions. Mix different useful directions such as spending trend analysis, actual spending feedback, plan adjustment, safety checks, and investment follow-up when appropriate. Do not repeat the primary action, completed actions, or requests for data already provided.',
     'If the message is unrelated or unintelligible, answer with a gentle 잘 모르겠어요-style scope guide and return no proposals.',
   ]
 }
@@ -2799,7 +2802,7 @@ function createDefaultNextActionRecommendation(profile: FinancialProfile): {
         '월급 기준은 잡혔으니 카드 내역이나 고정비를 더해 실제 생활비 기준으로 계획을 맞춰볼 수 있어요.',
       primaryLabel: '사용내역 분석',
       draft:
-        '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포로 분석해 주세요.',
+        '카드 내역을 보고 자료 월을 먼저 판단한 뒤 카테고리별 지출 분포를 분석하고, 내 소비 분포에 대한 피드백을 제시해 주세요.',
     }
   }
 
