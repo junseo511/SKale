@@ -932,7 +932,7 @@ app.post('/api/spending/analyze', async (request, response, next) => {
             'Treat transactions with the same date, amount, and identical or similar merchant as duplicates even when they come from different input sources. Return each transaction once.',
             'If image OCR is uncertain, lower confidence and explain what the user should verify in Korean in reason.',
             'Do not classify investments, savings, transfers, refunds, or income as ordinary expenses.',
-            `The current date is ${new Date().toISOString().slice(0, 10)}. Interpret a date without a year as belonging to the current year.`,
+            createCurrentDateTimeInstruction(),
             'Write at least one Korean sentence explaining each classification in reason.',
             'The result is a proposal that requires user review.',
             'If the submitted content is unrelated, nonsensical, or contains no recognizable transaction, return an empty proposals array and explain in Korean that the spending data could not be understood.',
@@ -1010,6 +1010,7 @@ app.post('/api/assets/analyze', async (request, response, next) => {
             'When recurring income is absent, return an empty salaryAllocations array and mention the missing salary information in Korean in missingData.',
             'When income, monthly living costs, or fixed costs are insufficient, do not assert an investable amount; list the missing information in Korean.',
             'Do not calculate or assert total assets, total debt, or net worth in the model response. Application code performs those calculations.',
+            createCurrentDateTimeInstruction(),
             'Lower confidence for uncertain items. The user must review the proposal.',
             'If the message is unrelated, nonsensical, or cannot be interpreted as financial information, return no proposals, explain in Korean that it could not be understood, and do not invent missing values.',
           ].join('\n'),
@@ -1076,6 +1077,7 @@ app.post('/api/portfolio/analyze', async (request, response, next) => {
             'Consider emergency funds, debt, outstanding card payments, and short-term goal funds before investment.',
             'Do not give buy or sell instructions. Propose only asset-class allocation directions.',
             'Never invent a number or current market fact that the user did not provide.',
+            createCurrentDateTimeInstruction(),
             'Make the allocation percentages total exactly 100.',
             'The result is a reference proposal that the user may edit, accept, or reject.',
             'If the input is unrelated, nonsensical, or insufficient to discuss a portfolio, state in Korean that it cannot be determined and list the necessary missing information instead of guessing.',
@@ -1119,6 +1121,7 @@ app.post('/api/stocks/analyze', async (request, response, next) => {
             'You are the stock-review component of the personal finance agent SKale.',
             'The user may write in Korean or English. Write all user-facing natural-language output in Korean.',
             'Use only information provided by the user. Do not search for or infer current earnings, stock prices, or valuation data.',
+            createCurrentDateTimeInstruction(),
             'Use these maximum scores: industry structure 25, competitive advantage 20, financial quality 25, valuation 15, management and capital allocation 10, and risk control 5.',
             'Return null for any score without sufficient evidence, and use the Korean verdict meaning insufficient data or hold when appropriate.',
             'Do not force scores across all areas when financial data is sparse.',
@@ -1455,14 +1458,6 @@ function createQuickPaydayConversationResponse({
     )
   }
 
-  if (isCurrentMonthQuestionIntent(intentText)) {
-    const { year, month } = getCurrentDateParts()
-    return createStaticPaydayResponse(
-      `현재는 ${year}년 ${month}월입니다.`,
-      profile,
-    )
-  }
-
   if (isAcknowledgementIntent(intentText)) {
     const nextAction = createDefaultNextActionRecommendation(profile)
     return createStaticPaydayResponse(
@@ -1628,18 +1623,43 @@ function normalizeQuickIntentText(message: string): string {
     .replace(/[?？!！.,。~"'`]/g, '')
 }
 
-function getCurrentDateParts(): { year: number; month: number; day: number } {
+function getCurrentDateTimeContext(): {
+  isoDateTime: string
+  localDateTime: string
+  timeZone: string
+} {
   const currentDate = new Date()
+  const timeZone =
+    Intl.DateTimeFormat().resolvedOptions().timeZone || 'server local time'
+  const localDateTime = new Intl.DateTimeFormat('sv-SE', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone,
+  }).format(currentDate)
+
   return {
-    year: currentDate.getFullYear(),
-    month: currentDate.getMonth() + 1,
-    day: currentDate.getDate(),
+    isoDateTime: currentDate.toISOString(),
+    localDateTime,
+    timeZone,
   }
 }
 
-function formatCurrentDateForPrompt(): string {
-  const { year, month, day } = getCurrentDateParts()
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+function formatCurrentDateTimeForPrompt(): string {
+  const context = getCurrentDateTimeContext()
+  return `${context.localDateTime} (${context.timeZone}, ISO ${context.isoDateTime})`
+}
+
+function createCurrentDateTimeInstruction(): string {
+  return [
+    `Current server date and time: ${formatCurrentDateTimeForPrompt()}.`,
+    'Treat this as the authoritative current moment for today, this month, last month, next month, deadlines, and date-relative reasoning.',
+    'Do not infer the current date from model knowledge or prior conversation. If the user asks about the current date or time, answer from this value.',
+  ].join(' ')
 }
 
 function hasQuickActionableFinancialInput(message: string): boolean {
@@ -1670,17 +1690,6 @@ function isCapabilityQuestionIntent(intentText: string): boolean {
     intentText.includes('사용법') ||
     intentText.includes('도움말') ||
     intentText === 'help'
-  )
-}
-
-function isCurrentMonthQuestionIntent(intentText: string): boolean {
-  return (
-    (intentText.includes('이번달') || intentText.includes('현재')) &&
-    (intentText.includes('몇월') ||
-      intentText.includes('몇월이야') ||
-      intentText.includes('무슨달') ||
-      intentText.includes('몇년도') ||
-      intentText.includes('날짜'))
   )
 }
 
@@ -2193,7 +2202,7 @@ function buildPaydayConversationPrompt({
   targetMonth: string | undefined
 }): string {
   return [
-    `Current server date:\n${formatCurrentDateForPrompt()}`,
+    `Current server date and time:\n${formatCurrentDateTimeForPrompt()}`,
     `Application flow context:\n${JSON.stringify(appContext ?? null)}`,
     `Confirmed profile:\n${JSON.stringify(compactFinancialProfile(profile))}`,
     `Confirmed spending summaries:\n${JSON.stringify(compactMonthlySpending(monthlySpending))}`,
@@ -2223,6 +2232,7 @@ function createBasePaydayInstructions(): string[] {
   return [
     'You are SKale, a Korean payday-planning agent.',
     'Always write user-facing fields in polite Korean honorific style. Do not mix 반말 and 존댓말.',
+    createCurrentDateTimeInstruction(),
     'Return JSON that follows the response schema.',
     'Keep reply concise. Ask at most one follow-up only when it materially changes the next action.',
     'Only put clearly stated or directly visible facts into profilePatch. Return null for unchanged profilePatch fields.',
