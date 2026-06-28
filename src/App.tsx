@@ -2486,7 +2486,6 @@ function PlanSnapshotCard({
           <span>PAYDAY PLAN</span>
           <h2>입력한 내용으로 월급을 나눠드려요</h2>
         </div>
-        {plan && <strong>{formatWon(plan.availableInvestmentAmount)}</strong>}
       </div>
 
       {plan ? (
@@ -2527,7 +2526,7 @@ function PlanSnapshotCard({
                 type="button"
                 onClick={() => onUseDraft(stockResearchRequest)}
               >
-                후보 보기
+                투자 계획
               </button>
             )}
           </div>
@@ -2628,7 +2627,7 @@ function PlanSection({
                       onClick={() => onUseDraft(stockResearchRequest)}
                     >
                       <TrendingUp size={15} />
-                      후보 보기
+                      투자 후보 비교
                     </button>
                   </div>
                   <div>

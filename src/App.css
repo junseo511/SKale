@@ -155,7 +155,6 @@ main { width: min(1240px, calc(100% - 48px)); margin: 0 auto; }
 .context-heading h2 { margin: 6px 0 0; font-size: 19px; letter-spacing: -.4px; }
 .context-heading > strong { color: var(--sk-red); font-size: 14px; }
 .plan-snapshot-card { order: -1; }
-.plan-snapshot-card .context-heading > strong { font-size: 18px; white-space: nowrap; }
 .plan-snapshot-hero { display: grid; margin-top: 14px; padding: 14px; border-radius: 14px; color: white; background: linear-gradient(120deg, #e9002c, #ff6b1a); gap: 7px; }
 .plan-snapshot-hero span { width: fit-content; padding: 5px 8px; border-radius: 999px; background: rgba(130, 0, 22, .2); font-size: 11px; font-weight: 800; }
 .plan-snapshot-hero strong { font-size: 15px; line-height: 1.45; word-break: keep-all; }
