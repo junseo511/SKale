@@ -11,11 +11,11 @@ import { z } from 'zod'
 
 const DEFAULT_PORT = 8787
 const DEFAULT_MODEL_CANDIDATES = [
-  'gemini-3.5-flash',
-  'gemini-3-flash-preview',
   'gemini-3.1-flash-lite',
-  'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
+  'gemini-3-flash-preview',
+  'gemini-3.5-flash',
+  'gemini-2.5-flash',
 ] as const
 const CONFIDENCE_REVIEW_THRESHOLD = 0.75
 const MAX_IMAGE_COUNT = 4
